@@ -1,1 +1,149 @@
-# simpsons-arcade-html5
+# The Simpsons — browser arcade
+
+A browser player for Konami's 1991 arcade game *The Simpsons* (MAME set `simpsons`, 4-player world). It runs the game by emulating the board: its own interpreter for the KONAMI 053248 CPU (the 6809-derived core on that PCB), a Z80, a YM2151, and a K053260, and it draws the K052109 tilemaps, K053247 sprites, and K053251 mix onto a 320×224 canvas. The usual view adds a WebGL CRT shader and a 16:9 frame drawn by the page.
+
+The CPU, sound, and video were compared with MAME while they were written. This is an emulation. It is not a decompilation of the program into another language, and it is not an official Konami or Fox product.
+
+The game ROM is not in this repository. You bring a legally obtained MAME `simpsons.zip`.
+
+## Pictures
+
+Both frames are from a run of this page, with the CRT shader on and the 16:9 frame drawn by the page.
+
+<p align="center">
+<img src="docs/screenshots/title.png" alt="Attract mode inside the original 16:9 bezel with CRT filter" width="880">
+<br>
+<em>Attract mode inside the original 16:9 bezel with CRT filter.</em>
+</p>
+
+<p align="center">
+<img src="docs/screenshots/stage1.png" alt="Stage 1 gameplay (Marge, single player)" width="880">
+<br>
+<em>Stage 1 gameplay (Marge, single player).</em>
+</p>
+
+## What the page does
+
+- One to four players, on the keyboard or on gamepads.
+- Online rooms for four players. The host keeps the match in step with rollback: a late input is replayed from a saved frame, and sound from a replayed frame is not sent to the speakers twice.
+- Chat. Tab opens the line, Enter sends it, Esc cancels. A player's line is drawn in a bubble over that player. A spectator's line is drawn at the top of the picture, with the name.
+- A full room can still be watched, up to four spectators. A spectator can take an open player slot (coin, or the button in the panel).
+- A public room list, or a private room that is reached only by the link or the code.
+- Nicknames, stored in this browser and drawn with the player.
+- Three ways to see the picture: the default CRT and drawn frame, CRT alone (`?gfx=crt`), or sharp pixels (`?gfx=orig`). `?webgl=0` skips the shader. The frame is procedural page art. It is not a photograph of a cabinet and it is not Konami artwork.
+
+## Start
+
+Serve the `web/` directory over HTTP or HTTPS. A `file://` address breaks the ROM picker, the invite link, and WebRTC.
+
+With XAMPP, point the Apache document root at this repository (the root `index.html` only forwards to `web/index.html`) or at `web/` itself, then open the site from `http://localhost/`.
+
+From a checkout, this also works:
+
+```bash
+cd web
+python3 -m http.server 8080
+```
+
+Open `http://127.0.0.1:8080/`. The page asks you to choose `simpsons.zip`. The zip is checked by CRC32, whatever the file names inside it are, then kept in IndexedDB on that machine. It is not uploaded.
+
+A private checkout can place the extracted `assets/*.bin` files next to `web/index.html`. `web/romload.js` will use those and skip the picker. That folder is gitignored. Do not commit the bins or the zip. `node tools/make_pc.js` builds such a folder under `dist/` from your local zip; that output contains the ROM and must stay on your machine.
+
+The loader accepts the 4-player world chips at these CRC32 values:
+
+| File | CRC32 | Role |
+|---|---|---|
+| `072-g02.16c` | `580ce1d6` | KONAMI program |
+| `072-g01.17c` | `9f843def` | KONAMI program |
+| `072-j13.13c` | `aade2abd` | KONAMI program |
+| `072-j12.15c` | `479e12f2` | KONAMI program |
+| `072-e03.6g` | `866b7a35` | Z80 program |
+| `072-b07.18h` | `ba1ec910` | K052109 tiles |
+| `072-b06.16h` | `cf2bbcab` | K052109 tiles |
+| `072-b08.3n` | `7de500ad` | K053247 sprites |
+| `072-b09.8n` | `aa085093` | K053247 sprites |
+| `072-b10.12n` | `577dbd53` | K053247 sprites |
+| `072-b11.16l` | `55fab05d` | K053247 sprites |
+| `072-d05.1f` | `1397a73b` | K053260 samples |
+| `072-d04.1d` | `78778013` | K053260 samples |
+| `simpsons.12c.nv` | `ec3f0449` | ER5911 EEPROM |
+
+Each player inserts a coin and presses start, as on the cabinet. High scores and settings from that EEPROM are kept in `localStorage` after the first boot.
+
+| | Move | Attack | Jump | Coin | Start |
+|---|---|---|---|---|---|
+| Player 1 | arrows or W A S D | Z or J | X or K | 5 | 1 or Enter |
+| Player 2 | numpad 8 / 4 / 5 or 2 / 6 | numpad 0 or N | numpad . or M | 6 | 2 |
+| Player 3 | gamepad | gamepad | gamepad | 7 | 3 |
+| Player 4 | gamepad | gamepad | gamepad | 8 | 4 |
+
+On a gamepad, the pad or stick moves, A or X attacks, B or Y jumps, Select is the coin, and Start is start. Pad order follows the browser's pad list: the first pad is player 1. F2 holds the service switch.
+
+F7 opens and closes the multiplayer panel. There is also a button on the page.
+
+## Playing online
+
+Create a room from the panel. The invite is this page's own address plus `?sala=` and a short code. Each person opens that link in a browser, then uses coin and start.
+
+In an online room, that browser's controls belong to that browser's player. Four people need four browsers, not four seats at one keyboard.
+
+Signaling (the room list, the offer, the answer, and ICE) uses:
+
+`https://games4me.alwaysdata.net/simpsons/signal.php`
+
+When a room is opened, the page asks that server for short-lived TURN credentials (`?a=ice`). No relay password is stored in the browser. The static Open Relay credential that an earlier copy of `web/net/transport.js` embedded is not in this tree, the same choice as the public Cadillacs player, which also dropped its embedded relay secret. If the request fails, the page keeps the public STUN servers and does not substitute another relay account. If a direct connection does not come up and TURN was returned, the guest tries once more through the relay only.
+
+`?signal=` points at another copy of `signal.php`. `?net=peerjs` uses the PeerJS broker instead. `?turn=` is a local test override and is not copied into the invite. Do not put a relay password in a link you share.
+
+`web/net/signal.php` is the signaling program for someone who hosts their own copy. This repository does not deploy it. A real host copies `web/net/turn_config.example.php` to `turn_config.php` on that server and fills it there. The filled file is gitignored. Do not commit it, and do not ship it with the page. The stats view (`?a=stats&k=`) reads `stats_key` from that same file; the key is not in this repository.
+
+## A code-only package
+
+From the repository root:
+
+```bash
+python3 tools/make_itch.py
+```
+
+That writes `dist/simpsons_itch_<stamp>.zip`, which is gitignored. The zip holds the page's scripts, HTML, and the OFL font. It does not upload anywhere. It refuses to pack a ROM: a file whose CRC32 or size matches a chip or an extracted image fails the build.
+
+## Tests in this tree
+
+These are the scripts that are actually here. None of them contain the game ROM, a MAME trace, or an input movie. The comparison scripts read those from your machine (`roms/simpsons.zip`, `run/out/`, `snap/`, `ref/`). Those paths are gitignored and are not part of this repository, so the comparisons are not run by cloning alone.
+
+Simpsons checks that need your zip, and in several cases a MAME log you capture with the Lua under `run/`:
+
+- `test/roms.js`, `test/romload_check.js` — build and check the same images as `web/romload.js`.
+- `test/konami_lockstep.js`, `test/konamim_lockstep.js`, `test/board_lockstep.js` — main CPU or the whole board against `run/io_taps.lua`.
+- `test/sched_check.js` — scheduler log against a MAME log.
+- `test/input_lockstep.js` with `test/input/coin_start_walk.txt` and `run/input_script.lua`.
+- `test/video_compare.js` with `run/snaps.lua`.
+- `test/audio_render.js` and `test/wav_compare.py` — attract audio against a WAV you supply.
+- `test/ym_check.js` — `web/sim/ym2151.js` against a ymfm log you supply.
+- `test/state_check.js` — save, load, and rollback on the board.
+- `test/net_check.js` — in-process rollback, spectators, chat, nicknames.
+- `test/browser_check.py`, `test/test_coin_hint.py`, `test/test_gfx_modes.py`, `test/test_netplay.py`, `test/test_room_list.py`, `test/test_signal_list.sh`, `test/test_relay.py` — page checks. The relay script expects a local `turnserver` unless `SIGNAL` points at a host you run.
+
+This one does not load the game ROM:
+
+- `test/konami_unit.js` — reset, IRQ, FIRQ, and NMI on a synthetic 64 KB memory image.
+
+`test/promo_plan_simpsons.js`, `test/promo_live_simpsons.py`, and `test/promo_render_simpsons.py` drive a local capture. They read `roms/simpsons.zip` at runtime and write under `/tmp`. They do not embed ROM bytes.
+
+A few files are still the earlier Sunset Riders layout and are not Simpsons checks: `test/lockstep.js`, `test/machine_check.js`, `test/movie_check.js`, `test/test_web_runtime.py`, and `test/test_itch_iframe.py` (that last one still looks for the Sunset Riders signal host). `tools/extract_prog.py` and `tools/extract_gfx.py` still name the Sunset Riders chips; the browser loader is the Simpsons extractor.
+
+## Credits and notices
+
+Notices for code that is not original to this tree are in `THIRD_PARTY_NOTICES.md`.
+
+- The KONAMI 053248 interpreter (`web/sim/konami.js`, `web/sim/konamim.js`, `web/sim/konamim_core.js`) is a port of MAME's `konami.cpp`, BSD-3-Clause, copyright-holder Nathan Woods, based on the M6809 core copyright John Butler.
+- The cycle-split Z80 (`web/sim/z80m.js`, `web/sim/z80m_core.js`) is a port of MAME's `z80.cpp`, BSD-3-Clause, copyright-holder Juergen Buchmueller. The generator comment also names Andrei I. Holub; that name is not in the MAME header that was checked. See the notices file.
+- `web/sim/ym2151.js` is a port of ymfm's OPM engine, BSD-3-Clause, copyright 2021 Aaron Giles. Its tables are ymfm's.
+- `web/sim/k053260.js` is a port of MAME's `k053260.cpp`, BSD-3-Clause, copyright-holders Ernesto Corvi and Alex W. Jackson.
+- `web/sim/sched.js` is a port of MAME's scheduler, BSD-3-Clause, copyright-holder Aaron Giles.
+- Lilita One (`web/fonts/LilitaOne-Regular.ttf`) is SIL OFL 1.1, copyright 2011 Juan Montoreano, reserved font name Lilita. The license text is `web/fonts/OFL.txt`.
+- PeerJS 1.5.4 (MIT) is loaded from unpkg only when `?net=peerjs` is set. It is not in this repository.
+
+No license is added here for the rest of the tree.
+
+The Simpsons name and characters are trademarks of their owners; the arcade notices credit Twentieth Century Fox Film Corporation, and Konami published the game. KONAMI is a trademark of Konami. This repository is not endorsed by Konami or by the owners of The Simpsons.
