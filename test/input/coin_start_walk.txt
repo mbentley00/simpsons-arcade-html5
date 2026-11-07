@@ -1,0 +1,45 @@
+# Scripted input for test/input_lockstep.js and run/input_script.lua.
+# <frame> <port> <bits held, hex, active-high: pressed bits>   ports: COIN (1=coin1) P1..P4 (01 L 02 R 04 U 08 D 10 B1 attack 20 B2 jump 80 START)
+# a line sets that port's held bits from that frame on (until the next line for the port)
+900  COIN 01
+906  COIN 00
+960  COIN 01
+966  COIN 00
+1020 P1 80
+1026 P1 00
+2400 P1 02
+2700 P1 12
+2706 P1 02
+2760 P1 12
+2766 P1 02
+2820 P1 06
+2900 P1 0a
+2980 P1 01
+3000 P1 11
+3006 P1 01
+3060 P1 21
+3070 P1 01
+3200 P1 00
+3300 P1 10
+3304 P1 00
+3330 P1 10
+3334 P1 00
+3360 P1 10
+3364 P1 00
+3600 P1 00
+# player 2 joins mid-game (coin slot 2), player 4 inserts a coin and joins too
+2600 COIN 02
+2606 COIN 00
+2640 P2 80
+2646 P2 00
+2700 P2 01
+2900 P2 11
+2906 P2 01
+3000 P2 00
+3100 COIN 08
+3106 COIN 00
+3140 P4 80
+3146 P4 00
+3200 P4 22
+3210 P4 02
+3400 P4 00
