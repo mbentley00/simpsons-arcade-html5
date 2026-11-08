@@ -113,7 +113,10 @@
     if ($('np-leave')) $('np-leave').onclick = leave;
     if ($('np-pub')) $('np-pub').onchange = e => { try { localStorage.setItem(pubKey, e.target.checked ? '1' : '0'); } catch (x) {} };
     if ($('np-list')) bindList($('np-list'));
-    if ($('np-nick')) $('np-nick').onchange = e => { const n = SSRSESSION.cleanNick(e.target.value); try { localStorage.setItem(nickKey, n); } catch (x) {} e.target.value = n; if (st.s) st.s.setName(n); };
+    if ($('np-nick')) $('np-nick').onchange = e => { const n = SSRSESSION.cleanNick(e.target.value); try { localStorage.setItem(nickKey, n); } catch (x) {} e.target.value = n; if (st.s) st.s.setName(n); e.target.blur(); };
+    if ($('np-link')) $('np-link').setAttribute('readonly', '');
+    const play = document.getElementById('screen');
+    if (play && !play.hasAttribute('tabindex')) play.tabIndex = 0;
     if ($('np-watch')) $('np-watch').onclick = () => { st.full = null; st.msg = 'Recebendo o jogo para assistir…'; st.s.watch(); render(); };
     if ($('np-retry')) $('np-retry').onclick = () => { const r = st.retry; endSession(); join(r).catch(err); };
     if ($('np-promote')) $('np-promote').onclick = () => { st.s.promote(); render(); };
@@ -121,9 +124,9 @@
   function err(e) { st.msg = 'Erro: ' + (e && e.message || e); console.warn(e); render(); }
   function makeSession(role, extra) {
     const m = G.machine;
-    const s = new SSRSESSION.Session(Object.assign({ m, step: G.netStep, role, name: getNick(), delay: +(q.get('delay') || 2), onAudio: G.netAudio,
+    const s = new SSRSESSION.Session(Object.assign({ m, step: G.netStep, role, name: getNick(), delay: +(q.get('delay') || 2), lockDelay: q.get('delay') != null, onAudio: G.netAudio,
       onEvent: e => { if (e.t === 'chat') { if (window.SSRCHAT) SSRCHAT.show(e.slot, e.text, e.name); return; }
-        if (e.t === 'vaga' && e.v) show(true); st.log.push(e); if (e.t === 'state') { G.netAudioResync(e.snap); st.msg = ''; } if (e.t === 'hostgone') { st.msg = 'O anfitrião saiu da sala.'; endSession(); }
+        if (e.t === 'vaga' && e.v) show(true); st.log.push(e); if (e.t === 'state') { G.netAudioResync(e.snap); st.msg = ''; const play = document.getElementById('screen'); if (play) try { play.focus(); } catch (x) {} } if (e.t === 'hostgone') { st.msg = 'O anfitrião saiu da sala.'; endSession(); }
         if (e.t === 'full' && st.autoWatch && e.watch) { st.autoWatch = false; st.msg = 'Recebendo o jogo para assistir…'; st.s.watch(); render(); return; }
         if (e.t === 'full') { st.msg = ''; st.full = e.watch ? 'watch' : 'nowatch'; show(true); } render(); } }, extra));
     return s;
@@ -135,6 +138,7 @@
     st.s = makeSession('host', { frame: G.frameNo + 1 }); G.net = ctl;
     st.t.onlink = l => { st.s.addLink(l); render(); };
     st.msg = ''; render();
+    const play = document.getElementById('screen'); if (play) try { play.focus(); } catch (e) {}
   }
   async function join(room, watch) {
     if (!/^[A-Z0-9]{4,8}$/.test(room)) throw new Error('código inválido');
