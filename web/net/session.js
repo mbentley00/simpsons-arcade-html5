@@ -20,6 +20,7 @@
   function Session(o) {
     this.m = o.m; this.step = o.step; this.role = o.role; this.STEP = o.stepMs || 1000 / 59.1856;
     this.delay = o.delay ?? 2; this.maxRoll = o.maxRoll ?? 8; this.hashEvery = o.hashEvery ?? 60; this.joinLead = o.joinLead ?? 30;
+    this.lockDelay = !!o.lockDelay;
     this.name = cleanNick(o.name || ''); this.links = []; this.rb = null; this.slot = -1; this.ev = o.onEvent || (() => {}); this.audio = o.onAudio || null;
     this.chatRl = [new RateLimit(), new RateLimit(), new RateLimit(), new RateLimit()];
     this.hashes = new Map(); this.stats = { resyncs: 0, desyncs: 0, hashChecks: 0, sent: 0, recv: 0, bytesState: 0, specDesyncs: 0, specHashChecks: 0 };
@@ -159,9 +160,23 @@
   };
   // estimated current frame of the host (guest side)
   P.hostFrame = function () { const L = this.links[0]; return L ? L.f + (now() - L.fT + L.rtt / 2) / this.STEP : 0; };
+  // Size the input delay to one-way latency so frames are scheduled early enough to arrive
+  // before the peer simulates them. delay=2 + maxRoll=8 stalls constantly around 400–500 ms RTT,
+  // and addLocal cannot record a tap once the lookahead window is already filled with 0.
+  P.adaptDelay = function () {
+    if (this.lockDelay || !this.rb) return;
+    let rtt = 0;
+    for (const L of this.links) if (L.rtt > rtt) rtt = L.rtt;
+    if (rtt < 40) return;
+    const d = Math.max(2, Math.min(24, Math.round((rtt / 2) / this.STEP) + 2));
+    const mr = Math.max(this.maxRoll, d + 8);
+    if (d > this.rb.delay) this.rb.delay = this.delay = d;
+    if (mr > this.rb.maxRoll) this.rb.maxRoll = this.maxRoll = mr;
+  };
   // one real-time tick: returns the number of frames simulated
   P.tick = function (local) {
     if (!this.rb) { this.sendAll(); return 0; }
+    this.adaptDelay();
     if (this.spec) return this.specTick();
     let n = 1;
     if (this.role === 'guest') {

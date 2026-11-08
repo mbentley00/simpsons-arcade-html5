@@ -19,11 +19,19 @@
   ];
   const SERVICE_KEY = 'F2';
   const held = {};
-  const typing = e => { const t = e.target; return !!(t && (t.tagName === 'INPUT' || t.tagName === 'TEXTAREA' || t.isContentEditable)); };
+  // Readonly fields (the invite URL in the net overlay) are not typing: game keys must still work.
+  // Edge latch: a keydown is kept until consumeLatch() after the emulator actually scheduled it,
+  // so a tap during a netplay stall is not dropped when addLocal cannot write a new frame yet.
+  const latched = {};
+  const typing = e => {
+    const t = e.target;
+    if (!t || t.readOnly || t.disabled) return false;
+    return !!(t.tagName === 'INPUT' || t.tagName === 'TEXTAREA' || t.isContentEditable);
+  };
   function attach(target) {
-    target.addEventListener('keydown', e => { if (typing(e)) return; held[e.code] = 1; if (/^(Arrow|Space|F2$)/.test(e.code)) e.preventDefault(); });
+    target.addEventListener('keydown', e => { if (typing(e)) return; held[e.code] = 1; latched[e.code] = 1; if (/^(Arrow|Space|F2$)/.test(e.code)) e.preventDefault(); });
     target.addEventListener('keyup', e => { held[e.code] = 0; });
-    target.addEventListener('blur', () => { for (const k in held) held[k] = 0; });
+    target.addEventListener('blur', () => { for (const k in held) held[k] = 0; for (const k in latched) delete latched[k]; });
   }
   function padBits(p) {
     if (!p || !p.connected) return 0;
@@ -38,7 +46,7 @@
   function sample() {
     const out = new Uint8Array(4);
     if (api.block) return out;
-    for (let p = 0; p < 4; p++) for (const k in KEYMAP[p]) if (held[k]) out[p] |= KEYMAP[p][k];
+    for (let p = 0; p < 4; p++) for (const k in KEYMAP[p]) if (held[k] || latched[k]) out[p] |= KEYMAP[p][k];
     const pads = (G.navigator && navigator.getGamepads) ? navigator.getGamepads() : [];
     for (let i = 0; i < Math.min(4, pads.length); i++) out[i] |= padBits(pads[i]);
     for (let p = 0; p < 4; p++) out[p] = clean(out[p]);
@@ -79,6 +87,7 @@
     eepromLoad, eepromSave, eepromClear,
   };
   if (G.addEventListener) { attach(G); G.addEventListener('pagehide', () => eepromSave(machine)); G.addEventListener('visibilitychange', () => document.hidden && eepromSave(machine)); }
-  const api = { block: false, L, R, U, D, FIRE, JUMP, COIN, START, KEYMAP, attach, sample, applyFrame, fromPorts, held };
+  const api = { block: false, L, R, U, D, FIRE, JUMP, COIN, START, KEYMAP, attach, sample, applyFrame, fromPorts, held,
+    consumeLatch() { for (const k of Object.keys(latched)) delete latched[k]; } };
   if (typeof module !== 'undefined') module.exports = api; else { G.SSRIN = api; G.SIMPI = SIMPI; }
 })(typeof window !== 'undefined' ? window : globalThis);

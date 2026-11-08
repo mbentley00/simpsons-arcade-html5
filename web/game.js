@@ -10,7 +10,7 @@
   let paused = false, shown = -1, m = null, v = null, STEP = 0, acc = 0, last = 0, fresh = false, stats = { steps: 0, ms: 0 };
   function blit(rgb) { for (let i = 0; i < W * H; i++) { const c = rgb[i]; px32[i] = 0xff000000 | ((c & 0xff) << 16) | (c & 0xff00) | ((c >> 16) & 0xff); } }
   function draw() { if (G.SSRCHAT && m) SSRCHAT.draw(m); if (!fresh) return; fresh = false; ctx.putImageData(img, 0, 0); if (G.SSRGFX) SSRGFX.present(img); }
-  function run(n) { if (net && net.active()) return netTick(n); const t0 = performance.now(); for (let i = 0; i < n; i++) { if (G.SIMPI) SIMPI.apply(m); m.runFrames(1); audioOut(m.drainAudio()); } stats.steps += n; stats.ms += performance.now() - t0; }
+  function run(n) { if (net && net.active()) return netTick(n); const t0 = performance.now(); for (let i = 0; i < n; i++) { if (G.SIMPI) SIMPI.apply(m); m.runFrames(1); audioOut(m.drainAudio()); if (G.SSRIN && SSRIN.consumeLatch) SSRIN.consumeLatch(); } stats.steps += n; stats.ms += performance.now() - t0; }
   // ---- netplay (net/ui.js): the rollback session owns the stepping; it calls netStep(fi, f) for every (re)simulated
   // frame. Per-frame rendering is off while online (resimulated frames are never drawn); after each tick the current
   // state is drawn once. Audio: every frame's PCM is kept and only released when the frame is confirmed (netAudio).
@@ -20,7 +20,11 @@
   function netAudioResync() { npcm.clear(); }
   function netTick(n) {
     const t0 = performance.now(), fi = SSRIN.sample(), any = fi[0] | fi[1] | fi[2] | fi[3];
+    const sess = net.session;
+    const known0 = sess && sess.rb && sess.slot >= 0 ? sess.rb.known[sess.slot] : -1;
     for (let i = 0; i < n; i++) net.tick(any);
+    const known1 = sess && sess.rb && sess.slot >= 0 ? sess.rb.known[sess.slot] : -1;
+    if (n && (!sess || !sess.rb || known1 > known0)) SSRIN.consumeLatch();
     if (n) { v.render(); blit(v.toRGB()); fresh = true; shown = m.frame; if (G.SIMPI) SIMPI.onFrame(m); }
     stats.steps += n; stats.ms += performance.now() - t0;
   }
