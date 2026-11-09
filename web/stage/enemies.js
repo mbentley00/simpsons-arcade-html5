@@ -5,7 +5,7 @@
   // SCENES order from stagedata.js -> combat stream. Scenes 5/10/14 lead through intro states to 6/11/15.
   // Scene-to-stream mapping is read by the ROM at BA87 from E88D. Bonus rounds and ending do not use combat streams.
   const STAGES = [0, -1, 1, 3, 4, 5, 6, 8, -1, 9, 11, -1], BASE = 0x36000;
-  const SKINS = ['duffman', 'rivet', 'slugger', 'moleman'];
+  const SKINS = ['duffman', 'rivet', 'slugger', 'moleman', 'conehead_carl', 'budget_knight'];
   const signed = n => (n << 24) >> 24;
   const enemy = row => (row.data[4] & 12) === 0 && row.data[7] <= 4;
   // Every record in the stream, for the editor: basic enemies, the stage's own characters and props (native objects
@@ -13,8 +13,14 @@
   const kind = row => (row.data[4] & 12) === 12 || row.data[7] >= 0xe0 ? 'script' : enemy(row) ? 'enemy' : 'character';
   const movable = row => kind(row) !== 'script';
   // Names seen in play for native object ids (data[7]); test/native_capture.js regenerates the crops used to name them.
-  const NAMES = G.SIMPNATIVE_NAMES || {};
-  const label = row => kind(row) === 'script' ? `Script 0x${row.data[7].toString(16)}` : NAMES[row.data[7]] || (enemy(row) ? 'Enemy #' + row.data[7] : `Character 0x${row.data[7].toString(16)}`);
+  const NAMES = G.SIMPNATIVE_NAMES || {}, EVENTS = G.SIMPNATIVE_EVENTS || {};
+  // Names are keyed "<stage>:<id>" because the same id can be a different object in another stage (0x0c is a door in the
+  // street and a goon in the park); a plain "<id>" key applies to every stage.
+  const label = (row, stage) => {
+    const id = row.data[7], hex = id.toString(16);
+    if (kind(row) === 'script') return (row.data[4] & 12) === 12 ? EVENTS.gate || 'Scroll lock' : EVENTS[stage + ':' + id] || EVENTS[id] || `Event 0x${hex}`;
+    return NAMES[stage + ':' + id] || NAMES[id] || (enemy(row) ? 'Enemy #' + id : `Character 0x${hex}`);
+  };
   function read(prog, stage) {
     if (!Number.isInteger(stage) || stage < 0 || stage >= 12) throw new Error('Invalid enemy stage');
     const word = o => (prog[o] << 8) | prog[o + 1];
@@ -35,7 +41,7 @@
       out[k] = rows.map(row => {
         if (!row || !Array.isArray(row.data) || row.data.length !== 8 || row.data.some(v => !Number.isInteger(v) || v < 0 || v > 255) || row.data[0] === 255) throw new Error('Invalid spawn record');
         if (row.skin !== undefined && (!SKINS.includes(row.skin) || !enemy(row))) throw new Error('Invalid enemy skin');
-        if (row.edited !== undefined && (typeof row.edited !== 'boolean' || !movable(row))) throw new Error('Invalid moved spawn');
+        if (row.edited !== undefined && typeof row.edited !== 'boolean') throw new Error('Invalid moved spawn'); // scripts too: duplicated events
         if (row.role !== undefined && (row.role !== 'npc' || !row.skin)) throw new Error('NPCs need a custom character');
         for (const [key, limit] of [['npcName',40],['dialogue',200]]) if (row[key] !== undefined && (row.role !== 'npc' || typeof row[key] !== 'string' || row[key].length > limit)) throw new Error('Invalid NPC text');
         return { data: row.data.slice(), ...(row.skin ? { skin: row.skin } : {}), ...(row.edited ? { edited: true } : {}), ...(row.role === 'npc' ? {role:'npc',npcName:(row.npcName||'').trim(),dialogue:(row.dialogue||'').trim()} : {}) };
@@ -76,6 +82,10 @@
   function pose(asset, anim, elapsed) {
     const frames = asset.animations[anim], tick = Math.max(0, Math.floor(elapsed / 8));
     return frames[(anim === 'fall' || anim === 'hit') ? Math.min(tick, frames.length - 1) : tick % frames.length];
+  }
+  // Native actor bit 0x40 means facing left, not an artwork-relative flip.
+  function facingFlip(asset, flags) {
+    return !!(flags & 0x40) !== (asset.facing === 'left');
   }
   function npcPositions(m) {
     if(m.ram[0x800]!==2||m.ram[0x802]!==1||![2,4,6,7,8,9,11,13,15].includes(m.ram[0x803])) return [];
@@ -151,7 +161,7 @@
           if (jump > 8) skin.lastAirFrame = this.frame;
           else if (skin.anim === 'fall' && this.frame - skin.lastAirFrame < 12) anim = 'fall';
           if (skin.anim !== anim) { skin.anim = anim; skin.poseStart = this.frame; }
-          next[compact * 8] = { actor, skin: skin.id, x: x - 54, feet: 374 - y - jump, flip: !!(r[actor + 9] & 0x40), anim, elapsed: this.frame - skin.poseStart };
+          next[compact * 8] = { actor, skin: skin.id, x: x - 54, feet: 374 - y - jump, flip: facingFlip(sprites[skin.id].asset, r[actor + 9]), anim, elapsed: this.frame - skin.poseStart };
         }
         compact++;
       }
@@ -186,6 +196,6 @@
       for(const r of npcPositions(m)) drawCustom(v,r,0xf0);
     };
   }
-  const api = { STAGES, enemy, kind, movable, label, NAMES, read, validate, position, move, make, decode, display, pose, npcPositions, install };
+  const api = { STAGES, enemy, kind, movable, label, NAMES, read, validate, position, move, make, decode, display, pose, facingFlip, npcPositions, install };
   if (typeof module !== 'undefined' && module.exports) module.exports = api; else G.SIMPENEMY = api;
 })(typeof window !== 'undefined' ? window : globalThis);

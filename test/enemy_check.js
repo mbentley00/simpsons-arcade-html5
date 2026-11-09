@@ -31,6 +31,10 @@ while (b.frame < 2480) b.runFrames(1);
 assert.equal(b.ram[0x803], 2); assert.equal(b.ram[0x875], 0x82);
 assert.deepEqual(b.prog, original, 'virtual spawn tables must not alter the ROM or its checksum');
 v.render(); const customPixels = v.bmp.filter(p => p >= 4096).length;
+for (const record of Object.values(b.stageEnemyRecords)) {
+  const artwork = ctx.window.SIMPENEMY_ASSETS[record.skin];
+  assert.equal(record.flip, E.facingFlip(artwork, b.ram[record.actor + 9]), 'DMA must use artwork-relative facing');
+}
 assert(customPixels > 200, 'custom enemies must be visible in the native priority compositor');
 assert(v.bmp.filter(p=>p>=4096&&p<4112).length>20,'Duffman retains his own palette');
 assert(v.bmp.filter(p=>p>=4128&&p<4144).length>20,'Rivet renders alongside Duffman with his own palette');

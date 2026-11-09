@@ -34,7 +34,9 @@ try:
         n_custom = ed.evaluate('SIMPTILESETS.school.layers[1].count')
         assert ed.evaluate('document.getElementById("pick").height') == -(-n_custom // 8) * 32, 'picker lists the custom blocks'
         # other stages have no school art
-        ed.select_option('#scene', index=2); assert ed.is_disabled('#tileset'); ed.select_option('#scene', index=0)
+        ed.select_option('#scene', index=3); assert ed.is_disabled('#tileset')  # cemetery: no custom art
+        ed.select_option('#scene', index=2); assert ed.evaluate('[...document.getElementById("tileset").options].map(o => o.value)') == ['', 'bowling']
+        ed.select_option('#scene', index=0)
         # paint custom block #5 of the front layer at column 2, row 1
         ed.click('#l1')
         pick = ed.locator('#pick').bounding_box(); k = pick['width'] / ed.evaluate('document.getElementById("pick").width')

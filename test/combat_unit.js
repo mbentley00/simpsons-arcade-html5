@@ -71,3 +71,15 @@ m=board();C.afterFrame(m);m.ram[0x803]=4;C.afterFrame(m);assert.equal(m.arcadeCo
 console.log('ok stage results rank, S/A draft bonuses, rarity weights and per-stage stats');
 // The in-game overlay draws nothing without a page (Node), and never touches the frame it is given then.
 {const px=new Uint32Array(320*224).fill(7);assert.equal(C.drawOverlay(px),false);assert(px.every(v=>v===7));console.log('ok overlay is presentation-only and inert without a page');}
+// Free bowling balls: no meter, cooldown, roll along the thrower's depth, confirmed hits, STRIKE on 3+ hits, plain data.
+m=board();a=m.arcadeCombat.players[0];const focus0=a.focus;C.request('throw');C.beforeFrame(m);
+assert.equal(m.arcadeCombat.balls.length,1);assert.equal(m.ram[0xf9b],34,'ball hits an overlapping enemy');assert.equal(a.combo,1);assert(a.focus>=focus0,'throwing costs no focus');
+C.request('throw');C.beforeFrame(m);assert.equal(m.arcadeCombat.balls.length,1,'cooldown between throws');
+m.frame+=C.BALL.cooldown;C.request('throw');C.beforeFrame(m);assert.equal(m.arcadeCombat.balls.length,2);
+assert.deepEqual(JSON.parse(JSON.stringify(m.arcadeCombat.balls)),m.arcadeCombat.balls,'balls are plain board data');
+for(let i=0;i<200;i++){m.frame++;C.beforeFrame(m);}assert.equal(m.arcadeCombat.balls.length,0,'balls leave the screen');
+m=board();for(const e of [0xfe0,0x1040]){m.ram.copyWithin(e,0xf80,0xfe0);}
+m.ram[0xf80+0x11]=0;m.ram[0xfe0+0x11]=0;m.ram[0x1040+0x11]=0;
+C.request('throw');C.beforeFrame(m);assert.equal(m.arcadeCombat.balls[0].hit.length,3);assert.equal(m.arcadeCombat.message,'STRIKE!');
+m=board();m.ram[0xf92]=100;C.request('throw');for(let i=0;i<20;i++){m.frame++;C.beforeFrame(m);}assert.equal(m.ram[0xf9b],40,'other depth lanes are not hit');
+console.log('ok bowling balls: free throws with cooldown, confirmed hits, STRIKE on three hits, depth lanes, plain data');

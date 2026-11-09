@@ -22,7 +22,11 @@
     {id:'shockwave',name:'Shockwave',text:'Chain finishers hit every other nearby enemy for 4 damage.',max:2,rarity:'epic'},
     {id:'burst',name:'Overcharge',text:'Focus Burst costs 10 less and reaches farther.',max:2,rarity:'epic'},
   ];
-  const STOP_MS = {finisher:45,launcher:70,counter:90,shockwave:60};
+  const STOP_MS = {finisher:45,launcher:70,counter:90,shockwave:60,strike:80};
+  // Free bowling balls (B / gamepad RT): no meter, short cooldown. Balls are plain board data in world coordinates
+  // (object x + camera), roll along the thrower's depth line and hit native enemies through the same health/reaction
+  // writes Focus Burst uses. A ball that hits 3+ enemies is a STRIKE.
+  const BALL = {cooldown:20,speed:5,life:110,reachX:14,reachZ:12,damage:6,colors:5};
   let machine = null, ui = null, queued = [], stopUntil = 0;
   const word = (r,o) => ((r[o]<<8)|r[o+1])<<16>>16;
   const put = (r,o,v) => { r[o]=(v>>8)&255; r[o+1]=v&255; };
@@ -34,12 +38,13 @@
   const maximum = s => 40 + 8*(s.upgrades.vitality||0);
   const flowWindow = s => 90+30*(s.upgrades.flow||0);
   const burstCost = s => 50-10*(s.upgrades.burst||0);
+  const cam = r => word(r,0x8ac);
   const near = (r,a,b,dx,dz) => Math.abs(word(r,a+12)-word(r,b+12))<dx && Math.abs(word(r,a+17)-word(r,b+17))<dz;
   const newStage = (level,frame) => ({level,start:frame,taken:0,best:0,kos:0,elites:0,counters:0});
   function create(seed) {
-    return {version:2,rng:(seed>>>0)||0x42ac9153,level:1,upgrades:{},cleared:{},offers:[],pendingLevel:0,enemySeen:{},elite:{},effects:[],wasGame:false,
+    return {version:2,rng:(seed>>>0)||0x42ac9153,level:1,upgrades:{},cleared:{},offers:[],pendingLevel:0,enemySeen:{},elite:{},effects:[],balls:[],wasGame:false,
       stage:newStage(1,0),results:null,history:[],
-      players:Array.from({length:4},()=>({combo:0,best:0,lastHit:-9999,focus:50,lastBits:0,intent:'chain',intentUntil:0,dodgeUntil:0,dodgeReady:0,countered:false,counterUntil:0,dir:1,active:false})),message:'↑ + Attack launches · C dodges · Q special',messageUntil:0};
+      players:Array.from({length:4},()=>({combo:0,best:0,lastHit:-9999,focus:50,lastBits:0,intent:'chain',intentUntil:0,dodgeUntil:0,dodgeReady:0,countered:false,counterUntil:0,throwReady:0,dir:1,active:false})),message:'↑ + Attack launches · C dodges · Q special · B bowls',messageUntil:0};
   }
   function random(s) { let x=s.rng; x^=x<<13; x^=x>>>17; x^=x<<5; s.rng=x>>>0; return s.rng; }
   function heal(m,p,n) { const o=0xa40+p*0xc0; if(m.ram[o]&0x40) m.ram[o+0x1b]=Math.min(maximum(m.arcadeCombat),m.ram[o+0x1b]+n); }
@@ -180,7 +185,7 @@
     if(G.document&&!options.noUI) buildUI();
     afterFrame(m);
   }
-  function request(move,p=0) { if(enabled&&p>=0&&p<4&&['dodge','special'].includes(move)) queued.push({move,p}); }
+  function request(move,p=0) { if(enabled&&p>=0&&p<4&&['dodge','special','throw'].includes(move)) queued.push({move,p}); }
   function beforeFrame(m) {
     if(!playing(m)||m.arcadeCombat.offers.length) return;
     if(!LEVELS[m.ram[0x803]]) { queued=[]; return; }
@@ -194,9 +199,10 @@
     }
     const pads=G.navigator?.getGamepads?G.navigator.getGamepads():[];
     for(let p=0;p<Math.min(4,pads.length);p++) {
-      const pad=pads[p],a=s.players[p],buttons=pad?.connected?((pad.buttons[4]?.pressed?1:0)|(pad.buttons[5]?.pressed?2:0)):0;
+      const pad=pads[p],a=s.players[p],buttons=pad?.connected?((pad.buttons[4]?.pressed?1:0)|(pad.buttons[5]?.pressed?2:0)|(pad.buttons[7]?.pressed?4:0)):0;
       if((buttons&1)&&!(a.lastPadButtons&1))queued.push({move:'dodge',p});
-      if((buttons&2)&&!(a.lastPadButtons&2))queued.push({move:'special',p});a.lastPadButtons=buttons;
+      if((buttons&2)&&!(a.lastPadButtons&2))queued.push({move:'special',p});
+      if((buttons&4)&&!(a.lastPadButtons&4))queued.push({move:'throw',p});a.lastPadButtons=buttons;
     }
     for(const action of queued.splice(0)) {
       const a=s.players[action.p],o=0xa40+action.p*0xc0; if(!(r[o]&0x40)||!r[o+0x1b]) continue;
@@ -214,7 +220,28 @@
         }
         message(m,hits?'FOCUS BURST!':'FOCUS BURST - NO TARGETS'); if(hits) feedback('launcher','FOCUS BURST!',action.p);
       }
+      if(action.move==='throw'&&m.frame>=(a.throwReady||0)) {
+        a.throwReady=m.frame+BALL.cooldown; s.balls=s.balls||[];
+        s.balls.push({p:action.p,x:word(r,o+12)+cam(r)+a.dir*14,z:word(r,o+17),dir:a.dir,born:m.frame,hit:[],color:random(s)%BALL.colors});
+      }
     }
+    rollBalls(m);
+  }
+  function rollBalls(m) {
+    const s=m.arcadeCombat,r=m.ram,c=cam(r); if(!s.balls||!s.balls.length) return;
+    s.balls=s.balls.filter(b=>{
+      b.x+=b.dir*BALL.speed;
+      const o=0xa40+b.p*0xc0, sx=b.x-c-54;
+      for(let e=0xd40;e<0x1640;e+=0x60) {
+        if(!(r[e]&0x40)||(r[e]&4)||!r[e+0x1b]||b.hit.includes(e)) continue;
+        if(Math.abs(word(r,e+12)+c-b.x)>=BALL.reachX||Math.abs(word(r,e+17)-b.z)>=BALL.reachZ) continue;
+        const damage=Math.ceil(BALL.damage*(1+.2*(s.upgrades.power||0)));
+        r[e+0x1b]=Math.max(0,r[e+0x1b]-damage); r[e]|=0x20; r[e+0x1e]=3; put(r,e+0x25,0x4000+o);
+        b.hit.push(e); landed(m,b.p,e,damage,r[e+0x1b],'ball'); if(regular(e)) s.effects.push({o:e,launch:false,dir:b.dir});
+        if(b.hit.length===3) { message(m,'STRIKE!'); feedback('strike','STRIKE!',b.p); }
+      }
+      return m.frame-b.born<BALL.life&&sx>-40&&sx<360;
+    });
   }
   function afterFrame(m) {
     if(!enabled||!m.arcadeCombat) return;
@@ -244,7 +271,7 @@
       if(e.launch) { put(r,e.o+0x16,Math.max(12,word(r,e.o+0x16))); put(r,e.o+0x19,0x500); }
       else if(e.pop) put(r,e.o+0x19,Math.max(0x300,word(r,e.o+0x19)));
     }
-    } else s.effects=[];
+    } else { s.effects=[]; s.balls=[]; }
     // The draft holds the game (SIMPCOMBAT.blocked) and is drawn inside the picture; local input goes to the cards.
     if(s.offers.length&&G.SSRIN&&!G.SSRIN.block) G.SSRIN.block=true;
     updateUI();
@@ -257,7 +284,10 @@
   const COL={ink:rgb(14,10,20),gold:rgb(255,204,72),white:rgb(255,246,226),cyan:rgb(110,232,255),purple:rgb(222,140,255),blue:rgb(96,176,255),
     orange:rgb(255,146,40),red:rgb(244,72,60),green:rgb(116,224,92),grey:rgb(168,156,140),panel:rgb(34,22,14),panel2:rgb(60,40,24),dim:rgb(96,84,72)};
   const RCOL={common:COL.gold,rare:COL.blue,epic:COL.purple}, RANKCOL={S:COL.cyan,A:COL.gold,B:COL.green,C:COL.grey};
-  const KCOL={counter:COL.cyan,shockwave:COL.purple,launcher:COL.orange,elite:COL.red,finisher:COL.gold};
+  const KCOL={counter:COL.cyan,shockwave:COL.purple,launcher:COL.orange,elite:COL.red,finisher:COL.gold,strike:COL.cyan};
+  // ball colours: [base, dark, light]
+  const BALLCOL=[[rgb(220,40,60),rgb(130,16,34),rgb(255,150,160)],[rgb(40,96,230),rgb(18,46,130),rgb(150,190,255)],[rgb(40,176,96),rgb(16,96,48),rgb(150,240,180)],
+    [rgb(250,170,30),rgb(160,90,10),rgb(255,230,150)],[rgb(150,60,210),rgb(80,24,120),rgb(220,170,255)]];
   const clean=t=>String(t).toUpperCase().replace(/[—–]/g,'-').replace(/[·•]/g,'*').replace(/×/g,'x').replace(/↑/g,'^');
   function fill(px,x,y,w,h,c){x|=0;y|=0;const x0=Math.max(0,x),y0=Math.max(0,y),x1=Math.min(SW,x+w),y1=Math.min(SH,y+h);for(let j=y0;j<y1;j++)px.fill(c,j*SW+x0,j*SW+x1);}
   function shade(px,x,y,w,h){const x0=Math.max(0,x|0),y0=Math.max(0,y|0),x1=Math.min(SW,(x+w)|0),y1=Math.min(SH,(y+h)|0);for(let j=y0;j<y1;j++)for(let i=j*SW+x0,e=j*SW+x1;i<e;i++){const c=px[i];px[i]=(0xff000000|((c>>>2)&0x3f3f3f)+((c>>>3)&0x1f1f1f))>>>0;}}
@@ -288,6 +318,24 @@
       if(machine.frame<=a.counterUntil){ if(blink(t,150)) text(px,tx,y+1,'COUNTER',COL.cyan,1,false); }
       else if(a.combo>=2) text(px,tx,y+1,a.combo+' HIT',a.combo>=10?COL.red:COL.gold,1,false);
       else { const n=Object.values(s.upgrades).reduce((u,v)=>u+v,0); if(n) text(px,tx,y+1,'+'+n+' UPG',COL.grey,1,false); }
+    }
+  }
+  function drawBalls(px,s,r){
+    const c=cam(r), R=6;
+    for(const b of s.balls||[]){
+      const age=machine.frame-b.born, sx=Math.round(b.x-c-54), feet=374-b.z, hop=Math.round(Math.abs(Math.sin(age*0.35))*Math.max(0,8-age*0.25));
+      const [base,dark,light]=BALLCOL[b.color%BALLCOL.length], cy=feet-R-hop;
+      // shadow on the floor
+      for(let y=-1;y<=1;y++)for(let x=-R+Math.abs(y)*2;x<=R-Math.abs(y)*2;x++){const X=sx+x,Y=feet+y;if(X>=0&&X<SW&&Y>=0&&Y<SH)px[Y*SW+X]=(0xff000000|((px[Y*SW+X]>>>1)&0x7f7f7f))>>>0;}
+      // ball: outline, shaded body, glossy highlight, three finger holes spinning with the roll
+      for(let y=-R-1;y<=R+1;y++)for(let x=-R-1;x<=R+1;x++){
+        const d=x*x+y*y, X=sx+x, Y=cy+y; if(X<0||X>=SW||Y<0||Y>=SH) continue;
+        if(d<=(R+1)*(R+1)&&d>R*R) px[Y*SW+X]=COL.ink;
+        else if(d<=R*R) px[Y*SW+X]=x+y>4?dark:base;
+      }
+      fill(px,sx-3,cy-4,2,2,light); fill(px,sx-4,cy-2,1,1,light);
+      const a=age*b.dir*0.45;
+      for(const k of [0,0.55,-0.55]){const hx=Math.round(sx+Math.cos(a+k)*2.6),hy=Math.round(cy-1+Math.sin(a+k)*2.6);fill(px,hx,hy,k?1:2,k?1:2,COL.ink);}
     }
   }
   function drawCallout(px,r,t){
@@ -331,11 +379,11 @@
     shade(px,0,0,SW,SH); box(px,14,14,292,196,COL.gold,COL.panel);
     center(px,22,'HOW TO PLAY',COL.gold,2);
     const lines=[['ATTACK','CHAIN HITS. EVERY 3RD HIT IS A FINISHER'],['^ + ATTACK','LAUNCHER. AIR HITS JUGGLE'],['C / LB','DODGE. DODGE A HIT TO COUNTER'],
-      ['Q / RB',`FOCUS BURST (${burstCost(s)} FOCUS)`],['ELITES','EXTRA HEALTH. DROP FOCUS + HEALTH'],['STAGE CLEAR','RANK S-C. PICK AN UPGRADE']];
+      ['Q / RB',`FOCUS BURST (${burstCost(s)} FOCUS)`],['B / RT','BOWL A BALL. FREE. 3 HITS = STRIKE!'],['ELITES','EXTRA HEALTH. DROP FOCUS + HEALTH'],['STAGE CLEAR','RANK S-C. PICK AN UPGRADE']];
     lines.forEach(([a,b],i)=>{text(px,24,46+i*10,a,COL.cyan,1,false);text(px,84,46+i*10,b,COL.white,1,false);});
-    text(px,24,112,'YOUR RUN',COL.gold,1,false);
+    text(px,24,118,'YOUR RUN',COL.gold,1,false);
     const build=Object.entries(s.upgrades).map(([id,n])=>(UPGRADES.find(u=>u.id===id)?.name||id)+' x'+n).join(', ')||'NO UPGRADES YET';
-    let y=122; for(const line of wrap(build,68).slice(0,5)){text(px,24,y,line,COL.white,1,false);y+=8;}
+    let y=128; for(const line of wrap(build,68).slice(0,5)){text(px,24,y,line,COL.white,1,false);y+=8;}
     if(s.history.length) text(px,24,y+2,'RANKS: '+s.history.map(h=>h.rank).join(' '),COL.grey,1,false);
     if(blink(t,600)) center(px,196,'H OR ESC: BACK   N: NEW RUN',COL.white);
   }
@@ -349,6 +397,7 @@
     if(s.offers.length){ drawDraft(px,s,t); mirror(s); return true; }
     if(ui.help){ drawHelp(px,s,t); return true; }
     if(!playing(machine)||!LEVELS[r[0x803]]) return drew;
+    drawBalls(px,s,r);
     drawStrip(px,s,r,t);
     const big=drawCallout(px,r,t);
     if(!big&&machine.frame<s.messageUntil&&!/HIT COMBO$/.test(s.message)) center(px,STRIP_Y+12,s.message,COL.white);
@@ -377,7 +426,7 @@
   function setHelp(open) {
     if(!ui||ui.help===open) return; ui.help=open;
     if(G.SSRIN){ G.SSRIN.block=open; for(const k in G.SSRIN.held) G.SSRIN.held[k]=0; G.SSRIN.consumeLatch(); }
-    if(open&&ui.live) ui.live.textContent='How to play. Attack chains build on landed hits; every third hit is a finisher. Up plus attack launches. C or LB dodges; dodging a hit opens a counter. Q or RB uses Focus Burst. Press H or Escape to return, N for a new run.';
+    if(open&&ui.live) ui.live.textContent='How to play. Attack chains build on landed hits; every third hit is a finisher. Up plus attack launches. C or LB dodges; dodging a hit opens a counter. Q or RB uses Focus Burst. B or RT bowls a ball for free; three hits with one ball is a strike. Press H or Escape to return, N for a new run.';
   }
   const GAME_KEYS=/^(Arrow|Key[WASDZJXK]$|Enter$|Space$|Numpad|Digit[1-4]$)/;
   function buildUI() {
@@ -408,6 +457,7 @@
       const t=e.target;if(e.repeat||e.ctrlKey||e.metaKey||e.altKey||t?.isContentEditable||/^(INPUT|TEXTAREA|SELECT)$/.test(t?.tagName||''))return;
       if(e.code==='KeyH'&&playing(machine)){e.preventDefault();setHelp(true);return;}
       if(e.code==='KeyQ'||e.code==='KeyC'){e.preventDefault();request(e.code==='KeyQ'?'special':'dodge');}
+      if(e.code==='KeyB'){e.preventDefault();request('throw');}
     },true);
     const at=e=>{const sc=document.getElementById('screen');if(!sc)return null;const b=sc.getBoundingClientRect();if(!b.width)return null;return {x:(e.clientX-b.left)*SW/b.width,y:(e.clientY-b.top)*SH/b.height};};
     const hit=p=>p&&ui.cards.findIndex(c=>p.x>=c.x&&p.x<c.x+c.w&&p.y>=c.y&&p.y<c.y+c.h);
@@ -419,7 +469,7 @@
     });
   }
   function updateUI() { if(ui&&machine&&!machine.arcadeCombat?.offers.length) { ui.cards=[]; ui.last=''; } }
-  const api={enabled,create,install,beforeFrame,afterFrame,request,choose,rate,UPGRADES,RARITY,drawOverlay,flash:feedback,
+  const api={enabled,BALL,create,install,beforeFrame,afterFrame,request,choose,rate,UPGRADES,RARITY,drawOverlay,flash:feedback,
     help(open){setHelp(!!open);},get helpOpen(){return !!ui?.help;},get selected(){return ui?ui.sel:0;},select(i){if(ui&&machine?.arcadeCombat?.offers.length)ui.sel=Math.max(0,Math.min(machine.arcadeCombat.offers.length-1,i|0));},get cards(){return ui?ui.cards.slice():[];},
     get drafting(){return !!machine?.arcadeCombat?.offers.length;},
     get blocked(){return !!machine?.arcadeCombat?.offers.length||!!ui?.help||now()<stopUntil;},

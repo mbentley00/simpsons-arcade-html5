@@ -74,7 +74,8 @@
     sec = D.section(sc.st, st.area); ram = D.palette(sc);
     const tv = tilesets[sc.scene], ts = tv && SIMPTILES.sets[tv.id];
     tset = ts && ts.area === st.area ? ts : null; tmaps = tset ? tv.maps : null;
-    enemyRows = enemyStage() < 0 ? [] : clone(enemyEdits[enemyStage()] || E.read(orig, enemyStage())); enemySelected = -1;
+    enemyRows = enemyStage() < 0 ? [] : clone(enemyEdits[enemyStage()] || E.read(orig, enemyStage())); enemySelected = -1; enemyHover = -1;
+    fillNativeKinds(); showEnemyPreview();
     if (!sec.layers[st.layer]) st.layer = sec.layers[0] ? 0 : 1;
     buildAtlas(0); buildAtlas(1);
     cellIx = new Map();
@@ -221,6 +222,10 @@
     if (!sec) return;
     if (mode !== 'blocks') {
       const p = enemyPoint(e); $('hover').textContent = `Enemy placement: X ${p.x}, Y ${p.y}`;
+      if (!enemyDrag) {
+        let near = -1, best = 24; enemyRows.forEach((row, i) => { if (!visibleEntity(row)) return; const a = E.position(row), d = Math.hypot(p.x - a.x, p.y - a.y); if (d < best) { best = d; near = i; } });
+        if (near !== enemyHover) { enemyHover = near; if (near >= 0) $('hover').textContent = enemyName(enemyRows[near]) + ` · X ${p.x}, Y ${p.y}`; drawAll(); }
+      }
       if (enemyDrag) { E.move(enemyRows[enemySelected], p.x, p.y); syncEnemies(); drawAll(); } return;
     }
     hover(e); if (stroke) { const { x, y } = cellAt(e); paint(x, y); }
@@ -248,27 +253,82 @@
     }
     canvas.getContext('2d').putImageData(image, 0, 0); thumbnails[asset.id] = canvas;
   }
+  function fillNativeKinds() { // the stage's own object types (characters, props) that can be placed
+    const sel = $('enemyKind'); sel.querySelector('#nativeKinds')?.remove();
+    const stage = enemyStage(); if (stage < 0) return;
+    const group = document.createElement('optgroup'); group.id = 'nativeKinds'; group.label = 'This stage’s own characters & props';
+    const seen = new Set();
+    for (const row of E.read(orig, stage)) {
+      const id = row.data[7]; if (E.kind(row) !== 'character' || seen.has(id)) continue; seen.add(id);
+      const o = document.createElement('option'); o.value = 'native:' + id; o.textContent = E.label(row, enemyStage()); group.appendChild(o);
+    }
+    if (group.children.length) sel.appendChild(group);
+    if (!sel.value) sel.value = 'rivet';
+  }
+  function makeEntity(kind, x, y, role) {
+    if (!kind.startsWith('native:')) return E.make(kind, x, y, role);
+    const id = +kind.slice(7), src = E.read(orig, enemyStage()).find(r => r.data[7] === id && E.kind(r) === 'character');
+    const row = { data: src.data.slice() }; E.move(row, x, y); return row;
+  }
   function showEnemyPreview() {
-    const asset = assets[$('enemyKind').value], c = enemyPreview.getContext('2d'); c.clearRect(0, 0, enemyPreview.width, enemyPreview.height);
-    enemyPreview.hidden = !asset;
+    const kind = $('enemyKind').value, asset = assets[kind], c = enemyPreview.getContext('2d'); c.clearRect(0, 0, enemyPreview.width, enemyPreview.height);
+    const pv = kind.startsWith('native:') ? nativePreview(+kind.slice(7)) : null;
+    if (pv) { const k = Math.min(1, enemyPreview.width / pv.canvas.width, enemyPreview.height / pv.canvas.height); c.imageSmoothingEnabled = false; c.drawImage(pv.canvas, (enemyPreview.width - pv.canvas.width * k) / 2, enemyPreview.height - pv.canvas.height * k, pv.canvas.width * k, pv.canvas.height * k); }
+    enemyPreview.hidden = !asset && !pv; if (pv) return;
     if (asset) { enemyPreview.setAttribute('aria-label', asset.name + ' enemy preview'); c.drawImage(thumbnails[asset.id], 0, 0); }
   }
   $('enemyKind').onchange = showEnemyPreview; showEnemyPreview();
-  const enemyName = row => row.role === 'npc' ? (row.npcName || assets[row.skin]?.name) : assets[row.skin]?.name || E.label(row);
+  // The game's own objects: tools/capture_native_sprites.js recorded their sprite entries (web/stage/native_sprites.js);
+  // the picture is rendered here from the ROM's sprite graphics with palettes read from prog.bin at recorded offsets.
+  let romFiles = null, nativeVid = null, enemyHover = -1; const nativeCache = new Map();
+  function nativeCapture(id) {
+    const lib = window.SIMPNATIVE_SPRITES || {};
+    // other stages' captures only stand in for ids that are the same everywhere (basic enemies, the purple-suit goon)
+    return lib[enemyStage() + ':' + id] || (id <= 4 || id === 0x25 ? Object.entries(lib).find(([k]) => +k.split(':')[1] === id)?.[1] : null) || null;
+  }
+  function nativePreview(id) {
+    const cap = nativeCapture(id); if (!cap || !romFiles || !window.SimpsonsVideo) return null;
+    if (nativeCache.has(cap)) return nativeCache.get(cap);
+    if (!nativeVid) nativeVid = new SimpsonsVideo.Video({ obj: romFiles['gfx_sprites.bin'], chr: new Uint8Array(32), sprDst: new Uint16Array(0x800), k46: new Uint8Array(8) });
+    const v = nativeVid, b = v.b; b.sprDst.fill(0); cap.pieces.forEach((p, i) => b.sprDst.set(p, i * 8)); b.k46.set(cap.k46);
+    v.bmp.fill(0); v.pri.fill(0); v.drawSprites(cap.colorbase, [255, 255, 255]);
+    let x0 = 320, y0 = 264, x1 = -1, y1 = -1;
+    for (let y = 0; y < 264; y++) for (let x = 0; x < 320; x++) if (v.pri[y * 320 + x] === 31) { if (x < x0) x0 = x; if (x > x1) x1 = x; if (y < y0) y0 = y; if (y > y1) y1 = y; }
+    let res = null;
+    if (x1 >= 0) {
+      const w = x1 - x0 + 1, h = y1 - y0 + 1, c = document.createElement('canvas'); c.width = w; c.height = h;
+      const img = new ImageData(w, h), c5 = n => (n << 3) | (n >> 2);
+      for (let y = 0; y < h; y++) for (let x = 0; x < w; x++) {
+        const i = (y0 + y) * 320 + x0 + x; if (v.pri[i] !== 31) continue;
+        const pen = v.bmp[i] & 2047, off = cap.pal[pen >> 4]; if (off === undefined) continue;
+        const o = off + (pen & 15) * 2, col = (orig[o] << 8) | orig[o + 1], k = (y * w + x) * 4;
+        img.data[k] = c5(col & 31); img.data[k + 1] = c5((col >> 5) & 31); img.data[k + 2] = c5((col >> 10) & 31); img.data[k + 3] = 255;
+      }
+      c.getContext('2d').putImageData(img, 0, 0); res = { canvas: c, ax: cap.anchor[0] - x0, ay: cap.anchor[1] - y0 };
+    }
+    nativeCache.set(cap, res); return res;
+  }
+  window.SIMPEDITOR_TEST = { nativePreview }; // for test/test_native_characters.py
+  const enemyName = row => row.role === 'npc' ? (row.npcName || assets[row.skin]?.name) : assets[row.skin]?.name || E.label(row, enemyStage());
   function drawEnemies() {
     ctx.imageSmoothingEnabled = false;
     enemyRows.forEach((row, i) => {
       if (!visibleEntity(row)) return;
       const { x, y } = E.position(row), selected = i === enemySelected;
-      const asset = assets[row.skin], size = asset ? E.display(asset) : { width:32, height:56, anchor:[16,52] };
+      const asset = assets[row.skin], k0 = E.kind(row), pv = !asset && k0 !== 'script' ? nativePreview(row.data[7]) : null;
+      const size = asset ? E.display(asset) : pv ? { width: pv.canvas.width, height: pv.canvas.height, anchor: [pv.ax, pv.ay] } : { width:32, height:56, anchor:[16,52] };
       if (asset) ctx.drawImage(thumbnails[row.skin], x - size.anchor[0], y - size.anchor[1], size.width, size.height);
-      const k = E.kind(row), color = row.role === 'npc' ? '#7ad0ff' : k === 'character' ? '#8ef08e' : k === 'script' ? '#9a9a9a' : '#ff5d8f';
+      else if (pv) ctx.drawImage(pv.canvas, x - pv.ax, y - pv.ay);
+      const k = k0, color = row.role === 'npc' ? '#7ad0ff' : k === 'character' ? '#8ef08e' : k === 'script' ? '#9a9a9a' : '#ff5d8f';
       ctx.strokeStyle = selected ? '#fff' : color; ctx.fillStyle = selected ? '#ffc861' : color; ctx.lineWidth = 2;
       if (k === 'script') ctx.setLineDash([3, 3]);
       ctx.beginPath(); ctx.ellipse(x, y, 12, 5, 0, 0, Math.PI * 2); ctx.stroke(); ctx.setLineDash([]);
-      if (!asset && k !== 'script') { ctx.globalAlpha = .55; ctx.fillStyle = color; ctx.fillRect(x - 10, y - 46, 20, 44); ctx.globalAlpha = 1; }
-      ctx.fillStyle = 'rgba(0,0,0,.85)'; ctx.fillRect(x - 32, y + 8, 90, 14);
-      ctx.fillStyle = selected ? '#ffc861' : '#fff'; ctx.font = '10px system-ui'; ctx.fillText(enemyName(row), x - 29, y + 19);
+      if (!asset && !pv && k !== 'script') { ctx.globalAlpha = .55; ctx.fillStyle = color; ctx.fillRect(x - 10, y - 46, 20, 44); ctx.globalAlpha = 1; }
+      if (selected || i === enemyHover) { // names only for the selected or hovered marker (the list on the right has them all)
+        ctx.font = '10px system-ui'; const name = enemyName(row), tw = ctx.measureText(name).width + 8;
+        ctx.fillStyle = 'rgba(0,0,0,.85)'; ctx.fillRect(x - tw / 2, y + 8, tw, 14);
+        ctx.fillStyle = selected ? '#ffc861' : '#fff'; ctx.fillText(name, x - tw / 2 + 4, y + 19);
+      }
       if (selected) ctx.strokeRect(x - size.anchor[0] - 1, y - size.anchor[1] - 1, size.width + 2, size.height + 2);
     });
   }
@@ -281,8 +341,9 @@
     });
     list.value = enemySelected;
     const row = enemyRows[enemySelected], selected = row && visibleEntity(row);
-    for (const id of ['enemyX', 'enemyY', 'enemyMove', 'enemyDelete']) $(id).disabled = !selected || !E.movable(row);
-    $('enemyInfo').textContent = !selected ? '' : E.kind(row) === 'script' ? 'Stage script or trigger (scroll lock, wave or event). Shown for reference; it cannot be moved.' : E.kind(row) === 'character' ? `The stage's own ${E.label(row)} (native art and behaviour). Drag to move it; it appears when the camera reaches its X.` : '';
+    for (const id of ['enemyY', 'enemyMove', 'enemyDelete']) $(id).disabled = !selected || !E.movable(row);
+    $('enemyX').disabled = !selected; $('eventDup').disabled = !selected || mode === 'npcs';
+    $('enemyInfo').textContent = !selected ? '' : E.kind(row) === 'script' ? `${E.label(row, enemyStage())}: a stage script record (its exact behaviour is only partly decoded). It cannot be moved, but “Duplicate group to X” copies it with the records next to it (experimental).` : E.kind(row) === 'character' ? `The stage's own ${E.label(row, enemyStage())} (native art and behaviour). Drag to move it; it appears when the camera reaches its X.` : '';
     $('enemyX').value = selected ? E.position(row).x : ''; $('enemyY').value = selected ? E.position(row).y : '';
     $('npcFields').hidden = mode !== 'npcs';
     for (const id of ['npcName','npcDialogue','npcApply']) $(id).disabled = !selected;
@@ -317,7 +378,7 @@
     }
     if (e.button !== 0) return;
     if (enemyRows.length >= 255) { msg('This stage has reached its 255-spawn limit.'); return; }
-    const before = clone(enemyRows); enemyRows.push(E.make($('enemyKind').value, p.x, p.y, mode === 'npcs' ? 'npc' : undefined)); enemySelected = enemyRows.length - 1;
+    const before = clone(enemyRows); enemyRows.push(makeEntity($('enemyKind').value, p.x, p.y, mode === 'npcs' ? 'npc' : undefined)); enemySelected = enemyRows.length - 1;
     commitEnemies(before, 'Add ' + (mode === 'npcs' ? 'NPC ' : '') + enemyName(enemyRows[enemySelected]));
   }
   function deleteEnemy() {
@@ -329,6 +390,17 @@
     const p = E.position(enemyRows[enemySelected]); $('mapwrap').scrollLeft = Math.max(0, p.x * st.zoom - $('mapwrap').clientWidth / 2);
   };
   $('enemyDelete').onclick = deleteEnemy;
+  $('eventDup').onclick = () => { // copy an event with the records that sit next to it (same X +- 40) to a new X
+    const row = enemyRows[enemySelected], x = Number($('enemyX').value); if (!row || !Number.isFinite(x)) return;
+    const x0 = E.position(row).x, dx = Math.round(x) - x0;
+    if (!dx) { msg('Enter a different X to copy the group to.'); return; }
+    const group = enemyRows.filter(r => r.role !== 'npc' && Math.abs(E.position(r).x - x0) <= 40);
+    if (enemyRows.length + group.length > 255) { msg('This stage would exceed its 255-spawn limit.'); return; }
+    const before = clone(enemyRows);
+    for (const r of group) { const c = clone(r), nx = Math.max(0, Math.min(0xfeff, E.position(c).x + dx)); c.data[0] = nx >> 8; c.data[1] = nx & 255; c.edited = true; enemyRows.push(c); } // X only; other bytes kept
+    enemySelected = enemyRows.length - group.length + group.indexOf(row);
+    commitEnemies(before, `Duplicate group (${group.length} record${group.length === 1 ? '' : 's'}) to X ${x0 + dx}`);
+  };
   $('enemyMove').onclick = () => {
     const x = Number($('enemyX').value), y = Number($('enemyY').value);
     if (enemySelected < 0 || !Number.isFinite(x) || !Number.isFinite(y) || !E.movable(enemyRows[enemySelected])) return;
@@ -343,7 +415,7 @@
   function setMode(value) {
     saveNpcDetails(); end(); mode = value; enemySelected=-1;
     $('toolBlocks').classList.toggle('on', mode === 'blocks'); $('toolEnemies').classList.toggle('on', mode === 'enemies'); $('toolNpcs').classList.toggle('on',mode==='npcs');
-    const native=$('enemyKind').querySelector('option[value="grunt"]'); native.disabled=mode==='npcs'; if(mode==='npcs'&&$('enemyKind').value==='grunt')$('enemyKind').value='rivet'; showEnemyPreview();
+    const native=$('enemyKind').querySelector('option[value="grunt"]'); native.disabled=mode==='npcs'; $('enemyKind').querySelectorAll('#nativeKinds option').forEach(o=>{o.disabled=mode==='npcs';}); if(mode==='npcs'&&($('enemyKind').value==='grunt'||$('enemyKind').value.startsWith('native:')))$('enemyKind').value='rivet'; showEnemyPreview();
     for (const el of [$('sel'), $('pickwrap'), document.querySelector('#side h2')]) el.style.display = mode !== 'blocks' ? 'none' : '';
     $('enemyPanel').hidden = mode === 'blocks'; drawAll(); syncEnemies();
     $('entityHint').textContent=mode==='npcs'?'NPCs are friendly, cannot be attacked, and never count toward wave completion. Press E nearby to talk.':'Custom enemies use the standard enemy’s AI, attacks and collisions.';
@@ -412,7 +484,7 @@
   controls.forEach(c => { c.disabled = true; });
   (async () => {
     try {
-      const files = await SSRROM.ensure();
+      const files = await SSRROM.ensure(); romFiles = files;
       orig = files['prog.bin']; await SIMPTILES.ready;
       let doc = {}; try { doc = JSON.parse(localStorage.getItem(S.PATCH_KEY) || '{}') || {}; SIMPTILES.migrate(doc, orig); } catch (e) { doc = {}; }
       bytes = doc.bytes && typeof doc.bytes === 'object' && !Array.isArray(doc.bytes) ? doc.bytes : {}; work = S.applyPatch(orig, bytes).prog; bytes = S.diff(orig, work);

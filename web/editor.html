@@ -49,7 +49,7 @@ button.go{background:#2f5d2a;border-color:#4f9446}
 <div id="side">
   <div id="sel"><canvas id="selc" width="32" height="32"></canvas><div id="selinfo"></div></div>
   <div id="enemyPanel" hidden>
-    <label>Place <select id="enemyKind"><option value="rivet">Rivet</option><option value="slugger">Slugger (baseball mascot)</option><option value="duffman">Duffman</option><option value="moleman">Hans Moleman</option><option value="grunt">Standard enemy</option></select></label>
+    <label>Place <select id="enemyKind"><option value="rivet">Rivet</option><option value="slugger">Slugger (baseball mascot)</option><option value="duffman">Duffman</option><option value="moleman">Hans Moleman</option><option value="conehead_carl">Conehead Carl</option><option value="budget_knight">Budget Knight</option><option value="grunt">Standard enemy</option></select></label>
     <canvas id="enemyPreview" width="64" height="96" aria-label="Enemy preview"></canvas>
     <div id="enemyNote">Click empty map space to add. Drag a marker to move it. Select a marker and press Delete to remove. Enemy placements apply to the whole stage; use Main to position them.</div>
     <label title="Scroll locks, wave and event records in the spawn stream"><input id="showScripts" type="checkbox" style="width:auto"> Show scripts &amp; triggers</label>
@@ -57,6 +57,7 @@ button.go{background:#2f5d2a;border-color:#4f9446}
     <small id="enemyInfo" aria-live="polite"></small>
     <div style="display:flex;gap:8px"><label>X <input id="enemyX" type="number" min="0" max="65279" step="1"></label><label>Y <input id="enemyY" type="number" min="0" max="1016" step="8"></label></div>
     <div><button id="enemyMove">Move selected</button><button id="enemyDelete">Delete selected</button></div>
+    <div><button id="eventDup" title="Copy the selected record and every record within 40 px of it (an event and the characters that belong to it) to the X above">Duplicate group to X</button></div>
     <div id="npcFields" hidden><label>Name <input id="npcName" maxlength="40" style="width:100%"></label><label>Dialogue <textarea id="npcDialogue" maxlength="200" rows="3" style="width:100%"></textarea></label><button id="npcApply">Save NPC details</button></div>
     <small id="entityHint">Custom enemies use the standard enemy's AI, attacks and collisions.</small>
   </div>
@@ -66,5 +67,5 @@ button.go{background:#2f5d2a;border-color:#4f9446}
   Edits are saved in this browser and used by the game page. Blocks are 32&times;32 px groups of 16 tiles from your ROM. Some map data is shared between sections, so an edit can show up in more than one place.</div>
 </div>
 <div id="status"><span id="hover">&nbsp;</span> <span id="msg"></span></div>
-<script src="romload.js"></script><script src="stage/stagedata.js"></script><script src="custom/tileset_school.js"></script><script src="stage/tileset.js"></script><script src="stage/native_names.js"></script><script src="stage/enemies.js"></script><script src="custom/duffman.js"></script><script src="custom/rivet.js"></script><script src="custom/slugger.js"></script><script src="custom/moleman.js"></script><script src="stage/editor.js"></script>
+<script src="romload.js"></script><script src="stage/stagedata.js"></script><script src="custom/tileset_school.js"></script><script src="custom/tileset_bowling.js"></script><script src="stage/tileset.js"></script><script src="stage/native_names.js"></script><script src="stage/enemies.js"></script><script src="custom/duffman.js"></script><script src="custom/rivet.js"></script><script src="custom/slugger.js"></script><script src="custom/moleman.js"></script><script src="custom/conehead_carl.js"></script><script src="custom/budget_knight.js"></script><script src="sim/video.js"></script><script src="stage/native_sprites.js"></script><script src="stage/editor.js"></script>
 </body></html>

@@ -1,5 +1,6 @@
 #!/usr/bin/env python3
-"""Editor shows the stage's own characters (dog, goons, other native objects), lets them be moved, keeps scripts read-only."""
+"""Editor shows the stage's own characters with their real sprites (rendered from the ROM), lets them be moved and placed,
+and duplicates script/event groups."""
 import functools
 import http.server
 import os
@@ -24,11 +25,11 @@ try:
         names = ed.evaluate('[...document.querySelectorAll("#enemyList option")].map(o => o.textContent)')
         assert any(n.startswith('Dog') for n in names), names
         assert any(n.startswith('Goon (purple suit)') for n in names) and any(n.startswith('Character 0x') for n in names)
-        assert not any(n.startswith('Script') for n in names), 'scripts hidden by default'
+        assert not any(n.startswith(('Event', 'Stage trigger')) for n in names), 'scripts hidden by default'
         basic = sum(n.startswith('Enemy #') for n in names); assert len(names) > basic + 20, (len(names), basic)
         ed.check('#showScripts')
         with_scripts = ed.evaluate('document.querySelectorAll("#enemyList option").length'); assert with_scripts > len(names)
-        script = ed.evaluate('[...document.querySelectorAll("#enemyList option")].find(o => o.textContent.startsWith("Script")).value')
+        script = ed.evaluate('[...document.querySelectorAll("#enemyList option")].find(o => /^(Event|Stage trigger)/.test(o.textContent)).value')
         ed.select_option('#enemyList', script)
         assert ed.is_disabled('#enemyMove') and ed.is_disabled('#enemyDelete') and 'cannot be moved' in ed.inner_text('#enemyInfo')
         ed.uncheck('#showScripts')
@@ -37,16 +38,42 @@ try:
         assert not ed.is_disabled('#enemyMove') and 'Dog' in ed.inner_text('#enemyInfo')
         ed.fill('#enemyX', '400'); ed.fill('#enemyY', '160'); ed.click('#enemyMove'); ed.wait_for_timeout(400)
         rows = ed.evaluate('JSON.parse(localStorage.getItem(SIMPSTAGE.PATCH_KEY)).enemies["1"]')
-        moved = [r for r in rows if r['data'][7] == 0x26 and r.get('edited')]
+        moved = [r for r in rows if r['data'][7] == 3 and r.get('edited')]
         assert moved and (moved[0]['data'][0] << 8 | moved[0]['data'][1]) == 400 and moved[0]['data'][2] == 20, moved
-        print(f'ok editor lists {len(names)} characters in the amusement park (dog, goons, native objects), scripts read-only, dog moved')
+        # sprites come from the ROM at runtime: dog and goon previews have real pixels
+        for kid in (3, 0x25):
+            dims = ed.evaluate('(id) => { const p = SIMPEDITOR_TEST.nativePreview(id); if (!p) return null; const d = p.canvas.getContext("2d").getImageData(0, 0, p.canvas.width, p.canvas.height).data; let n = 0; for (let i = 3; i < d.length; i += 4) if (d[i]) n++; return [p.canvas.width, p.canvas.height, n]; }', kid)
+            assert dims and dims[0] > 15 and dims[1] > 15 and dims[2] > 150, (kid, dims)
+        print(f'ok editor lists {len(names)} characters in the amusement park with ROM-rendered sprites, scripts read-only, dog moved')
+        # street: place Principal Skinner (a native object) and duplicate the police-car event group
+        ed.select_option('#scene', label='Stage 1 - street'); ed.click('#toolEnemies')
+        assert ed.evaluate('[...document.querySelectorAll("#nativeKinds option")].some(o => o.textContent === "Principal Skinner")')
+        ed.select_option('#enemyKind', 'native:41'); assert ed.is_visible('#enemyPreview')
+        box = ed.locator('#map').bounding_box(); z = box['width'] / ed.evaluate('document.getElementById("map").width')
+        ed.evaluate('document.getElementById("mapwrap").scrollLeft = 0')
+        box = ed.locator('#map').bounding_box()
+        ed.mouse.click(box['x'] + 120 * z, box['y'] + 200 * z); ed.wait_for_timeout(400)
+        rows = ed.evaluate('JSON.parse(localStorage.getItem(SIMPSTAGE.PATCH_KEY)).enemies["0"]')
+        added = [r for r in rows if r['data'][7] == 41 and r.get('edited')]
+        assert added and abs((added[0]['data'][0] << 8 | added[0]['data'][1]) - 120) <= 2, added
+        ed.check('#showScripts')
+        car = ed.evaluate('[...document.querySelectorAll("#enemyList option")].find(o => o.textContent.startsWith("Police car arrives")).value')
+        ed.select_option('#enemyList', car); assert not ed.is_disabled('#eventDup')
+        before = len(rows); ed.fill('#enemyX', '1400'); ed.click('#eventDup'); ed.wait_for_timeout(400)
+        rows = ed.evaluate('JSON.parse(localStorage.getItem(SIMPSTAGE.PATCH_KEY)).enemies["0"]')
+        copies = [r for r in rows if r.get('edited') and (r['data'][0] << 8 | r['data'][1]) >= 1360]
+        assert len(rows) > before + 1 and any(r['data'][7] == 0xe9 for r in copies), (before, len(rows))
+        os.makedirs(os.path.join(ROOT, 'preview'), exist_ok=True)
+        ed.uncheck('#showScripts'); ed.evaluate('document.getElementById("mapwrap").scrollLeft = 1450'); ed.wait_for_timeout(200)
+        ed.screenshot(path=os.path.join(ROOT, 'preview/native_markers.png'))
+        print(f'ok placed Principal Skinner and duplicated the police-car event group ({len(copies)} records)')
         with ctx.expect_page() as popup:
             ed.click('#play')
         game = popup.value; game.on('pageerror', lambda e: errors.append(str(e)))
-        game.wait_for_url('**/index.html?scene=4&play=1'); game.evaluate('SIMPG.ready')
-        assert game.evaluate('SIMPLAUNCH.playable(SIMPG.machine,SIMPSTAGE.SCENES[2])')
+        game.wait_for_url('**/index.html?scene=2&play=1'); game.evaluate('SIMPG.ready')
+        assert game.evaluate('SIMPLAUNCH.playable(SIMPG.machine,SIMPSTAGE.SCENES[0])')
         assert not errors, errors
-        print('ok the edited stage launches with the moved native character; no page errors')
+        print('ok the edited street (added Skinner, duplicated event) launches; no page errors')
         browser.close()
 finally:
     server.shutdown()
