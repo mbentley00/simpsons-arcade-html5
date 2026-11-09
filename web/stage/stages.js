@@ -34,7 +34,7 @@
       const tv = s.tileset && G.SIMPTILES ? SIMPTILES.validate({ [s.scene]: s.tileset })[s.scene] || null : null;
       let enemies = null;
       if (Array.isArray(s.enemies) && G.SIMPENEMY) try { enemies = SIMPENEMY.validate({ [stage]: s.enemies })[stage] || null; } catch (e) { enemies = null; }
-      out[id] = { name: String(s.name || 'Custom stage').trim().slice(0, 40) || 'Custom stage', scene: s.scene, tileset: tv, enemies, events: G.SIMPEVENTS && tv ? SIMPEVENTS.validate(s.events, tv.id) : [] };
+      out[id] = { name: String(s.name || 'Custom stage').trim().slice(0, 40) || 'Custom stage', scene: s.scene, tileset: tv, enemies, events: G.SIMPEVENTS ? SIMPEVENTS.validate(s.events, tv ? tv.id : null) : [] };
     }
     return out;
   }

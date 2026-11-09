@@ -17,27 +17,37 @@
   const put = (r, o, v) => { r[o] = (v >> 8) & 255; r[o + 1] = v & 255; };
   function hit(r, o, health, kind, attacker) { r[o] &= ~0x20; r[o + 0x1e] = kind; r[o + 0x1b] = health; put(r, o + 0x25, 0x4000 + attacker); r[o] |= 0x20; }
 
+  // type 'custom': an event made from a typed description; its recipe (web/stage/recipes.js) is stored with it and
+  // works in any custom stage, with or without level art
+  const RECIPE = () => G.SIMPRECIPE || (typeof require === 'function' ? require('./recipes.js') : null);
   const typesFor = art => Object.keys(TYPES).filter(t => TYPES[t].art === art);
   const defaults = art => (DEFAULTS[art] || []).map(e => ({ ...e }));
+  const nameOf = ev => ev.type === 'custom' ? (ev.recipe && ev.recipe.name) || 'Custom event' : TYPES[ev.type] ? TYPES[ev.type].name : ev.type;
   function validate(list, art) {
     if (!Array.isArray(list)) return [];
     const out = [];
     for (const e of list.slice(0, MAX)) {
-      if (!e || typeof e !== 'object' || !TYPES[e.type] || TYPES[e.type].art !== art) continue;
+      if (!e || typeof e !== 'object') continue;
       const x = Math.round(Number(e.x)); if (!Number.isFinite(x) || x < 0 || x > 8192) continue;
+      if (e.type === 'custom') {
+        const recipe = RECIPE() && RECIPE().normalize(e.recipe); if (!recipe) continue;
+        out.push({ type: 'custom', x, prompt: String(e.prompt || '').slice(0, 600), recipe }); continue;
+      }
+      if (!TYPES[e.type] || TYPES[e.type].art !== art) continue;
       out.push({ type: e.type, x });
     }
     return out.sort((a, b) => a.x - b.x);
   }
 
+  // opts: { events, set (level art, or null), st (the base stage's stage value, when there is no art) }
   let machine = null, video = null, cfg = null, saved = null;
   function install(m, vid, opts) {
-    if (!opts || !opts.set || !opts.events || !opts.events.length) return false;
+    if (!opts || !(opts.set || opts.st) || !opts.events || !opts.events.length) return false;
     machine = m; video = vid; cfg = opts; saved = null;
-    m.stageEvents = { fired: [], live: [], rng: 0x2545f491, banner: null };
+    m.stageEvents = { fired: [], live: [], rng: 0x2545f491, banner: null, maxHp: [0, 0, 0, 0] };
     return true;
   }
-  const inStage = m => m.ram[0x800] === 2 && (m.ram[0x875] & 0x7f) === (cfg.set.st & 0x7f) && m.ram[0x876] === cfg.set.area;
+  const inStage = m => m.ram[0x800] === 2 && (m.ram[0x875] & 0x7f) === ((cfg.set ? cfg.set.st : cfg.st) & 0x7f) && (!cfg.set || m.ram[0x876] === cfg.set.area);
   function rand(s, n) { s.rng ^= s.rng << 13; s.rng >>>= 0; s.rng ^= s.rng >>> 17; s.rng ^= s.rng << 5; s.rng >>>= 0; return s.rng % n; }
   function players(m) {
     const r = m.ram, c = word(r, 0x8ac), out = [];
@@ -61,7 +71,15 @@
     } else if (ev.type === 'pins') { s.live.push({ t: 'pins', at: f, until: f + 300, pins: [], n: 0 }); banner(s, m, 'PIN STORM!', 'white'); }
     else if (ev.type === 'cosmic') { s.live.push({ t: 'cosmic', at: f, until: f + 720 }); banner(s, m, 'COSMIC BOWLING!', 'purple'); }
     else if (ev.type === 'frenzy') { s.live.push({ t: 'frenzy', at: f, until: f + 600 }); banner(s, m, m.arcadeCombat ? 'FREE BALLS! PRESS B!' : 'BALL RETURN JAMMED!', 'cyan'); }
+    else if (ev.type === 'custom' && RECIPE()) { s.live.push(RECIPE().start(m, ev.recipe, f)); if (ev.recipe.banner) banner(s, m, ev.recipe.banner, ev.recipe.color); }
   }
+  // what a recipe may use: the same player/enemy lists and hit write as the built-in events
+  const env = {
+    players, enemies, cam: m => word(m.ram, 0x8ac), rand: n => rand(machine.stageEvents, n),
+    hit: (r, o, health, kind) => hit(r, o, health, kind, o >= 0xd40 ? 0xa40 : 0xf80),
+    banner: (text, color) => banner(machine.stageEvents, machine, text, color),
+    maxHealth: (m, p) => m.arcadeCombat ? 40 + 8 * (m.arcadeCombat.upgrades.vitality || 0) : Math.max(1, m.stageEvents.maxHp[p]),
+  };
   function stepBall(m, b) {
     const r = m.ram, age = m.frame - b.at, c = word(r, 0x8ac);
     if (age < WARN) return true;
@@ -93,7 +111,7 @@
   }
   // blacklight: dark surfaces drop to deep violet, bright or saturated paint glows
   function cosmicPens(on) {
-    if (!video || !video.pens) return;
+    if (!video || !video.pens || !cfg.set) return;
     const set = cfg.set, n = set.palette.length / 3, B = 0x2000, SHADE = 0x2100;
     if (video.pens.length < SHADE + 256) return;
     if (!saved) saved = video.pens.slice(B, SHADE + 256);
@@ -113,6 +131,7 @@
     const s = m.stageEvents;
     if (!inStage(m)) { if (s.live.length) { s.live = []; cosmicPens(false); } return; }
     const c = word(m.ram, 0x8ac);
+    for (const p of players(m)) s.maxHp[p.p] = Math.max(s.maxHp[p.p], m.ram[p.o + 0x1b]);
     cfg.events.forEach((ev, i) => { if (!s.fired.includes(i) && c + 160 >= ev.x) { s.fired.push(i); start(m, ev, i); } });
     let cosmic = false;
     s.live = s.live.filter(ev => {
@@ -120,6 +139,7 @@
       if (ev.t === 'pins') return stepPins(m, ev);
       if (ev.t === 'cosmic') { const age = m.frame - ev.at, left = ev.until - m.frame; cosmic = age < 40 ? (age >> 3) % 2 === 0 : left < 40 ? (left >> 3) % 2 === 1 : true; return m.frame < ev.until; }
       if (ev.t === 'frenzy') { if (m.arcadeCombat) for (const a of m.arcadeCombat.players) a.throwReady = Math.min(a.throwReady || 0, m.frame + 5); return m.frame < ev.until; }
+      if (ev.t === 'recipe') return RECIPE().step(m, ev, env);
       return false;
     });
     if (cosmic || s.cosmicOn) cosmicPens(cosmic); s.cosmicOn = cosmic;
@@ -170,9 +190,11 @@
     const m = machine; if (!cfg || !m || !m.stageEvents) return false;
     const s = m.stageEvents, f = m.frame, c = word(m.ram, 0x8ac); let drew = false;
     if (!inStage(m)) return false;
+    for (const ev of s.live) if (ev.t === 'recipe' && RECIPE().drawScreen(px, ev, f)) drew = true; // shake and tints under the objects
     for (const ev of s.live) {
       if (ev.t === 'ball') { drawBall(px, ev, c, f); drew = true; }
       else if (ev.t === 'pins') { drawPins(px, ev, c, f); drew = true; }
+      else if (ev.t === 'recipe' && RECIPE().drawObjects(px, ev, c, f)) drew = true;
     }
     const gfx = G.SIMPCOMBAT && SIMPCOMBAT.gfx;
     if (gfx) {
@@ -185,6 +207,6 @@
     }
     return drew;
   }
-  const api = { TYPES, DEFAULTS, typesFor, defaults, validate, install, beforeFrame, drawOverlay, hit };
+  const api = { TYPES, DEFAULTS, typesFor, defaults, nameOf, validate, install, beforeFrame, drawOverlay, hit };
   if (typeof module !== 'undefined' && module.exports) module.exports = api; else G.SIMPEVENTS = api;
 })(typeof window !== 'undefined' ? window : globalThis);

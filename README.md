@@ -119,6 +119,13 @@ The **Level art** menu switches a custom stage's art, and the block picker lists
 - **Cosmic bowling**: the lights go out and the alley glows in blacklight neon for 12 seconds.
 - **Ball-return frenzy**: for 10 seconds bowling balls (B / RT) have almost no cooldown.
 
+**Describe a new event** (top of the Events panel) makes an event from your own words, in any custom stage, with or without level art. Type something like "The lights go out and giant donuts rain from the sky for 8 seconds" and press **Create event**. The event is placed in the middle of the visible map, and it is also added to the Place menu (✨) so you can click more copies onto the map. Select a described event to see its description again; edit it and press **Remake selected event** to rebuild it in place.
+
+Events are built from a fixed set of building blocks: objects that roll or fly across the screen along a lane (bowling balls, pins, donuts, boulders, fireballs, Duff cans, bombs, pies, anvils), objects that rain from the sky, blasts, screen tints (lights out, blacklight, red alert, toxic green, sepia, negative, white flash), screen shake, healing, free bowling balls and on-screen messages, each with its own timing, target (players, enemies or everyone), damage and knockdown or flinch. No generated code is run. Things outside these blocks, like spawning characters or changing the music, are not possible yet; the editor says what was left out.
+
+- **Without a key**, a built-in reader picks the blocks from common words (rain, roll, explosion, earthquake, lights out, heal, donuts, boulders, ...).
+- **With a Claude API key** (open "Claude API key" under the box), Claude reads the description and builds the event. The key is kept in this browser's storage and is sent only to the Claude API, straight from the page. Each event costs one request to `claude-opus-5-5`.
+
 Use `?mods=0` for online play with the original ROM. The editor's local edits and scene selection are disabled on room invite links; a modified offline game asks you to open a fresh unmodified page before creating or joining a room. See [the format and usage notes](docs/stage-format.md) for limitations and checks.
 
 ## Playing online
@@ -169,6 +176,7 @@ Simpsons checks that need your zip, and in several cases a MAME log you capture 
 - `test/test_direct_launch.py`, `test/launch_check.js` — direct editor launch, cached state restoration with custom sprites, and native initialization of every editor scene. The Node check needs `unzip` on PATH.
 - `test/tileset_check.js` — custom level art: the original stage's collision (the player walks the level), the art following the camera, legacy migration.
 - `test/custom_stage_check.js`, `test/test_custom_stages.py` — custom stages: the original stage stays unchanged without `?custom`, New stage / paint / export / play / delete in the editor, migration of old level-art edits, and the Bowling Alley events (runaway ball knockdown, pin storm, cosmic bowling palette and restore) placed in the editor and fired in play.
+- `test/recipe_check.js`, `test/test_described_events.py` — events from a description: recipes are clamped, the built-in reader's choices, the Claude request (mocked API: model, JSON schema, fallbacks, key header), remaking an event, and described events firing in a stage without level art.
 - `test/test_native_characters.py` — the editor lists, moves and launches the stage's own characters; scripts stay read-only.
 - `test/combat_unit.js`, `test/combat_native.js`, `test/test_remix_npcs.py` — confirmed hits, native launcher/dodge physics, upgrade drafts/effects/run reset, friendly NPC authoring and dialogue. The native Node check needs `unzip` on PATH.
 

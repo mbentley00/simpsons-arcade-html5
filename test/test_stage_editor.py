@@ -25,7 +25,7 @@ with sync_playwright() as p:
     pg.goto(f'http://127.0.0.1:{port}/editor.html')
     pg.locator('#romload input[type=file]').set_input_files('roms/simpsons.zip')
     pg.wait_for_function('document.getElementById("scene").options.length > 0', timeout=60000)
-    names = pg.evaluate('[...document.getElementById("scene").options].map(o => o.textContent)')
+    names = pg.evaluate(r'[...document.getElementById("scene").options].filter(o => /^\d+$/.test(o.value)).map(o => o.textContent)')
     check(len(names) == 12, f'{len(names)} stages listed')
     pg.select_option('#scene', label='Stage 2 - amusement park')
     pg.wait_for_timeout(300)

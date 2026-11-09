@@ -44,7 +44,8 @@
     // custom level art: replaces the picture of a stage slot; its ROM maps and collision are unchanged
     if (!off && G.SIMPTILES && video) for (const t of Object.values(tilesets)) SIMPTILES.install(m, video, SIMPTILES.sets[t.id], t.maps);
     const art = Object.values(tilesets)[0];
-    if (!off && G.SIMPEVENTS && events.length && art) SIMPEVENTS.install(m, video, { events, set: SIMPTILES.sets[art.id] });
+    const base = G.SIMPSTAGE && SIMPSTAGE.SCENES.find(s => s.scene === sc);
+    if (!off && G.SIMPEVENTS && events.length && (art || base)) SIMPEVENTS.install(m, video, { events, set: art ? SIMPTILES.sets[art.id] : null, st: base ? base.st : 0 });
     if (!pending && !warp) return;
     const mw0 = m.mw;
     m.mw = function (a, v) {

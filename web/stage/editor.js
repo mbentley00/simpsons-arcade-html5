@@ -89,7 +89,7 @@
     const Ls = sec.layers.filter(Boolean);
     map.width = Math.max(...Ls.map(L => L.map.screens.length)) * 256; map.height = Math.max(...Ls.map(L => L.map.rows)) * CELL;
     if (st.sel >= nBlk[st.layer]) st.sel = 0;
-    if ((enemyStage() < 0 && mode !== 'blocks') || (mode === 'events' && !eventTypes().length)) setMode('blocks');
+    if ((enemyStage() < 0 && mode !== 'blocks') || (mode === 'events' && !custom())) setMode('blocks');
     applyZoom(); drawAll(); drawPicker(); drawSel(); syncUi(); syncEnemies(); savePrefs();
   }
 
@@ -138,8 +138,8 @@
   function syncUi() {
     fillScenes(); fillAreas(); fillTilesets();
     $('stageRename').hidden = $('stageDelete').hidden = !custom();
-    $('toolEvents').disabled = !eventTypes().length;
-    $('toolEvents').title = eventTypes().length ? 'Place scripted events (runaway ball, pin storm, ...)' : custom() ? 'This level art has no scripted events yet' : 'Scripted events are part of custom stages: make one with New stage';
+    $('toolEvents').disabled = !custom();
+    $('toolEvents').title = custom() ? 'Place scripted events, or describe a new one in your own words' : 'Scripted events are part of custom stages: make one with New stage';
     for (const l of [0, 1]) { $('l' + l).classList.toggle('on', st.layer === l); $('l' + l).disabled = !sec.layers[l]; }
     $('vOther').classList.toggle('on', st.other); $('vGrid').classList.toggle('on', st.grid); $('vEdits').classList.toggle('on', st.edits); $('vZoom').classList.toggle('on', st.zoom === 2);
     $('undo').disabled = !undo.length; $('redo').disabled = !redo.length; countEdits();
@@ -168,11 +168,11 @@
     if (!set || set.scene !== sc.scene || cur === id) return;
     if (id && cur && !confirm(`Switch ${cs.name} to the ${set.name} art? Painting done in the current art and its scripted events are replaced.`)) { fillTilesets(); return; }
     if (id) {
-      cs.tileset = { id, maps: SIMPTILES.defaults(set) }; cs.events = SIMPEVENTS.defaults(id);
+      cs.tileset = { id, maps: SIMPTILES.defaults(set) }; cs.events = SIMPEVENTS.defaults(id).concat(cs.events.filter(e => e.type === 'custom'));
       msg(`${cs.name} now uses the ${set.name} art. Paint with its blocks, then press Play.`);
     } else {
       if (!confirm(`Show ${sc.name}'s original art in ${cs.name}? Painting done in ${set.name} and its scripted events are removed.`)) { fillTilesets(); return; }
-      cs.tileset = null; cs.events = []; msg(`${cs.name} now shows ${sc.name}'s original art.`);
+      cs.tileset = null; cs.events = cs.events.filter(e => e.type === 'custom'); msg(`${cs.name} now shows ${sc.name}'s original art.`);
     }
     undo = []; redo = []; st.area = set.area; st.sel = 0; saveNow(); loadSection();
   }
@@ -284,7 +284,7 @@
     hover(e); if (stroke) { const { x, y } = cellAt(e); paint(x, y); }
   });
   const end = () => {
-    if (eventDrag) { const d = eventDrag; eventDrag = null; commitEvents(d.before, 'Move ' + SIMPEVENTS.TYPES[custom().events[eventSel].type].name, eventSel); return; }
+    if (eventDrag) { const d = eventDrag; eventDrag = null; commitEvents(d.before, 'Move ' + SIMPEVENTS.nameOf(custom().events[eventSel]), eventSel); return; }
     if (enemyDrag) { const before = enemyDrag; enemyDrag = null; commitEnemies(before, 'move enemy'); return; }
     if (!stroke) return; const s = stroke; stroke = null; commit(s, `paint (${s.size} block${s.size === 1 ? '' : 's'})`); if (s.size) { scanMetaMax(); drawSel(); }
   };
@@ -473,11 +473,12 @@
   // ---------- scripted events (custom stages): markers at their trigger X; an event fires when the camera brings that X
   // to the middle of the screen
   const eventTypes = () => { const cs = custom(); return cs && cs.tileset ? SIMPEVENTS.typesFor(cs.tileset.id) : []; };
-  const EVCOL = { ball: '#ff5d5d', pins: '#f3f3f3', cosmic: '#d98cff', frenzy: '#7ad0ff' };
+  const EVCOL = { ball: '#ff5d5d', pins: '#f3f3f3', cosmic: '#d98cff', frenzy: '#7ad0ff', custom: '#8ff58a' };
+  const made = []; // recipes described in this session, offered in the Place menu as "made:<i>"
   function drawEvents() {
     const cs = custom(); if (!cs) return;
     cs.events.forEach((ev, i) => {
-      const sel = i === eventSel, col = EVCOL[ev.type] || '#ffc861', name = SIMPEVENTS.TYPES[ev.type].name;
+      const sel = i === eventSel, col = EVCOL[ev.type] || '#ffc861', name = (ev.type === 'custom' ? '✨ ' : '') + SIMPEVENTS.nameOf(ev);
       ctx.strokeStyle = col; ctx.lineWidth = sel ? 3 : 2; ctx.setLineDash([6, 4]); ctx.beginPath(); ctx.moveTo(ev.x + 0.5, 0); ctx.lineTo(ev.x + 0.5, map.height); ctx.stroke(); ctx.setLineDash([]);
       ctx.font = 'bold 11px system-ui'; const w = ctx.measureText(name).width + 10, y = 8 + (i % 3) * 18;
       ctx.fillStyle = 'rgba(0,0,0,.85)'; ctx.fillRect(ev.x + 3, y, w, 15); ctx.strokeStyle = sel ? '#fff' : col; ctx.lineWidth = 1; ctx.strokeRect(ev.x + 3.5, y + 0.5, w - 1, 14);
@@ -488,12 +489,51 @@
     const cs = custom(), list = $('eventList'), types = eventTypes(); list.innerHTML = '';
     const kind = $('eventType'), keep = kind.value; kind.innerHTML = '';
     for (const t of types) { const o = document.createElement('option'); o.value = t; o.textContent = SIMPEVENTS.TYPES[t].name; kind.appendChild(o); }
-    if (types.includes(keep)) kind.value = keep;
-    $('eventText').textContent = kind.value ? SIMPEVENTS.TYPES[kind.value].text : '';
-    (cs ? cs.events : []).forEach((ev, i) => { const o = document.createElement('option'); o.value = i; o.textContent = `${SIMPEVENTS.TYPES[ev.type].name} · X ${ev.x}`; list.appendChild(o); });
+    made.forEach((m, i) => { const o = document.createElement('option'); o.value = 'made:' + i; o.textContent = '✨ ' + m.recipe.name; kind.appendChild(o); });
+    if ([...kind.options].some(o => o.value === keep)) kind.value = keep;
+    const pending = madeOf(kind.value);
+    $('eventText').textContent = pending ? SIMPRECIPE.describe(pending.recipe) : kind.value ? SIMPEVENTS.TYPES[kind.value].text : 'Describe an event above to make one.';
+    (cs ? cs.events : []).forEach((ev, i) => { const o = document.createElement('option'); o.value = i; o.textContent = `${ev.type === 'custom' ? '✨ ' : ''}${SIMPEVENTS.nameOf(ev)} · X ${ev.x}`; list.appendChild(o); });
     list.value = eventSel; $('eventX').value = eventSel >= 0 && cs ? cs.events[eventSel].x : '';
     for (const id of ['eventX', 'eventMove', 'eventDelete']) $(id).disabled = eventSel < 0;
+    // a selected described event can be read back and remade from an edited description
+    const sel = cs && eventSel >= 0 ? cs.events[eventSel] : null, own = sel && sel.type === 'custom';
+    $('aiMake').textContent = own ? 'Remake selected event' : 'Create event';
+    if (own && aiShown !== sel) { $('aiPrompt').value = sel.prompt || ''; $('aiResult').textContent = SIMPRECIPE.describe(sel.recipe) + (sel.recipe.summary ? ' ' + sel.recipe.summary : ''); }
+    aiShown = own ? sel : null;
   }
+  let aiShown = null, aiBusy = false;
+  const madeOf = v => typeof v === 'string' && v.startsWith('made:') ? made[+v.slice(5)] : null;
+  function newEvent(type, x) {
+    const m = madeOf(type);
+    return m ? { type: 'custom', x, prompt: m.prompt, recipe: clone(m.recipe) } : { type, x };
+  }
+  try { $('aiKey').value = localStorage.getItem('simpsons.claudeKey') || ''; } catch (e) {}
+  $('aiKey').onchange = () => { try { const k = $('aiKey').value.trim(); if (k) localStorage.setItem('simpsons.claudeKey', k); else localStorage.removeItem('simpsons.claudeKey'); } catch (e) {} };
+  $('aiMake').onclick = async () => {
+    const cs = custom(), prompt = $('aiPrompt').value.trim(); if (!cs || aiBusy) return;
+    if (!prompt) { $('aiStatus').textContent = 'Describe the event first.'; $('aiPrompt').focus(); return; }
+    const key = $('aiKey').value.trim(); let recipe = null, note = '';
+    aiBusy = true; $('aiMake').disabled = true; $('aiStatus').textContent = key ? 'Asking Claude…' : 'Reading…';
+    try {
+      if (key) {
+        try { recipe = await SIMPRECIPE.generate(prompt, key); }
+        catch (e) { note = `Claude could not make it (${(e && e.message) || e}). The built-in reader made this instead. `; recipe = SIMPRECIPE.fromText(prompt); }
+      } else recipe = SIMPRECIPE.fromText(prompt);
+    } finally { aiBusy = false; $('aiMake').disabled = false; }
+    if (!recipe) { $('aiStatus').textContent = ''; $('aiResult').textContent = note + 'That description did not match anything the built-in reader knows. Try words like rain, roll, explosion, lights out, shake or heal, or add a Claude API key.'; return; }
+    $('aiStatus').textContent = '';
+    $('aiResult').textContent = note + SIMPRECIPE.describe(recipe) + (recipe.summary && !note ? ' ' + recipe.summary : '');
+    made.push({ prompt, recipe }); const value = 'made:' + (made.length - 1);
+    const before = clone(cs.events), sel = eventSel >= 0 ? cs.events[eventSel] : null;
+    if (sel && sel.type === 'custom') { sel.prompt = prompt; sel.recipe = clone(recipe); aiShown = sel; commitEvents(before, 'Remake ' + recipe.name, eventSel); return; }
+    if (cs.events.length >= 24) { syncEvents(); $('eventType').value = value; syncEvents(); msg('A stage can have up to 24 scripted events. Delete one, then place this with a click.'); return; }
+    // place it in the middle of the visible map; drag it or click to place more copies
+    const wrap = $('mapwrap'), x = Math.max(0, Math.min(map.width - 1, Math.round((wrap.scrollLeft + wrap.clientWidth / 2) / st.zoom)));
+    cs.events.push(newEvent(value, x)); aiShown = cs.events[cs.events.length - 1];
+    syncEvents(); $('eventType').value = value;
+    commitEvents(before, 'Add ' + recipe.name, cs.events.length - 1);
+  };
   function commitEvents(before, label, select) {
     const cs = custom(); if (JSON.stringify(before) === JSON.stringify(cs.events)) return;
     const moved = cs.events[select]; cs.events.sort((a, b) => a.x - b.x); eventSel = moved ? cs.events.indexOf(moved) : -1;
@@ -510,19 +550,19 @@
     }
     if (e.button !== 0 || !$('eventType').value) return;
     if (cs.events.length >= 24) { msg('A stage can have up to 24 scripted events.'); return; }
-    const before = clone(cs.events); cs.events.push({ type: $('eventType').value, x: p.x });
-    commitEvents(before, 'Add ' + SIMPEVENTS.TYPES[$('eventType').value].name, cs.events.length - 1);
+    const before = clone(cs.events), ev = newEvent($('eventType').value, p.x); cs.events.push(ev);
+    commitEvents(before, 'Add ' + SIMPEVENTS.nameOf(ev), cs.events.length - 1);
   }
   function deleteEvent() {
     const cs = custom(); if (!cs || eventSel < 0) return;
-    const before = clone(cs.events), name = SIMPEVENTS.TYPES[cs.events[eventSel].type].name; cs.events.splice(eventSel, 1); eventSel = -1; commitEvents(before, 'Delete ' + name, -1);
+    const before = clone(cs.events), name = SIMPEVENTS.nameOf(cs.events[eventSel]); cs.events.splice(eventSel, 1); eventSel = -1; commitEvents(before, 'Delete ' + name, -1);
   }
   $('eventType').onchange = () => syncEvents();
   $('eventList').onchange = e => { eventSel = +e.target.value; syncEvents(); drawAll(); const x = custom().events[eventSel].x; $('mapwrap').scrollLeft = Math.max(0, x * st.zoom - $('mapwrap').clientWidth / 2); };
   $('eventDelete').onclick = deleteEvent;
   $('eventMove').onclick = () => {
     const cs = custom(), x = Math.round(Number($('eventX').value)); if (!cs || eventSel < 0 || !Number.isFinite(x)) return;
-    const before = clone(cs.events); cs.events[eventSel].x = Math.max(0, Math.min(map.width - 1, x)); commitEvents(before, 'Move ' + SIMPEVENTS.TYPES[cs.events[eventSel].type].name, eventSel);
+    const before = clone(cs.events); cs.events[eventSel].x = Math.max(0, Math.min(map.width - 1, x)); commitEvents(before, 'Move ' + SIMPEVENTS.nameOf(cs.events[eventSel]), eventSel);
   };
 
   function setMode(value) {
@@ -532,7 +572,7 @@
     for (const el of [$('sel'), $('pickwrap'), document.querySelector('#side h2')]) el.style.display = mode !== 'blocks' ? 'none' : '';
     $('enemyPanel').hidden = mode === 'blocks' || mode === 'events'; $('eventPanel').hidden = mode !== 'events'; eventSel = -1; drawAll(); syncEnemies(); syncEvents();
     $('entityHint').textContent=mode==='npcs'?'NPCs are friendly, cannot be attacked, and never count toward wave completion. Press E nearby to talk.':'Custom enemies use the standard enemy’s AI, attacks and collisions.';
-    msg(mode === 'events' ? 'Click the map to place the chosen event at that X. Drag a marker to move it; right-click deletes.' : mode === 'npcs' ? 'Click empty map space to add a friendly NPC. Select it to edit its name and dialogue.' : mode==='enemies'?'Click empty map space to add an enemy. Drag a marker to move it.':'Pick a block, then paint on the map.');
+    msg(mode === 'events' ? 'Describe a new event, or click the map to place the chosen one at that X. Drag a marker to move it; right-click deletes.' : mode === 'npcs' ? 'Click empty map space to add a friendly NPC. Select it to edit its name and dialogue.' : mode==='enemies'?'Click empty map space to add an enemy. Drag a marker to move it.':'Pick a block, then paint on the map.');
   }
   $('toolBlocks').onclick = () => setMode('blocks'); $('toolEnemies').onclick = () => setMode('enemies');
   $('toolNpcs').onclick = () => setMode('npcs'); $('toolEvents').onclick = () => setMode('events');

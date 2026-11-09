@@ -13,7 +13,7 @@ select,button{font:inherit;color:var(--text);background:#33271b;border:1px solid
 button{cursor:pointer}button:hover:not(:disabled){border-color:var(--acc)}button:disabled{opacity:.4;cursor:default}
 button.on{background:var(--acc);color:#2a1a08;border-color:var(--acc)}
 button.go{background:#2f5d2a;border-color:#4f9446}
-#eventPanel{padding:10px;display:flex;flex-direction:column;gap:8px;min-height:0;flex:1;overflow:auto}#eventPanel[hidden]{display:none}#eventList{width:100%;flex:1;min-height:130px}#eventPanel input{width:80px;background:#17120d;border:1px solid var(--line);color:var(--text);padding:4px}#eventText{color:var(--text)}
+#eventPanel{padding:10px;display:flex;flex-direction:column;gap:8px;min-height:0;flex:1;overflow:auto}#eventPanel[hidden]{display:none}#eventList{width:100%;flex:1;min-height:130px}#eventPanel input{width:80px;background:#17120d;border:1px solid var(--line);color:var(--text);padding:4px}#eventText{color:var(--text)}#aiBox{display:flex;flex-direction:column;gap:6px;padding-bottom:8px;border-bottom:1px solid var(--line)}#aiBox textarea{width:100%;box-sizing:border-box;background:#17120d;border:1px solid var(--line);color:var(--text);padding:4px;font:inherit;resize:vertical}#aiPanel input,#aiKeyBox input{width:100%;box-sizing:border-box}#aiResult{color:var(--text)}#aiKeyBox small{display:block;color:var(--dim);margin:4px 0}
 dialog#newStage{background:var(--panel);color:var(--text);border:1px solid var(--acc);border-radius:8px;max-width:440px}dialog#newStage::backdrop{background:rgba(0,0,0,.6)}dialog#newStage h3{margin:0 0 6px;color:var(--acc)}dialog#newStage p{color:var(--dim);margin:0 0 10px}dialog#newStage label{display:flex;gap:8px;align-items:center;margin:8px 0}dialog#newStage input{flex:1;background:#17120d;border:1px solid var(--line);color:var(--text);padding:4px}dialog#newStage .row{display:flex;gap:8px;justify-content:flex-end;margin-top:12px}
 #enemyPanel{padding:10px;display:flex;flex-direction:column;gap:8px;min-height:0;flex:1;overflow:auto}#enemyPanel[hidden]{display:none}
 #enemyList{width:100%;flex:1;min-height:130px}#enemyPanel label{display:flex;gap:6px;align-items:center}#enemyPanel input{width:70px;background:#17120d;border:1px solid var(--line);color:var(--text);padding:4px}
@@ -64,6 +64,16 @@ dialog#newStage{background:var(--panel);color:var(--text);border:1px solid var(-
     <small id="entityHint">Custom enemies use the standard enemy's AI, attacks and collisions.</small>
   </div>
   <div id="eventPanel" hidden>
+    <div id="aiBox">
+      <label for="aiPrompt"><b>Describe a new event</b></label>
+      <textarea id="aiPrompt" rows="3" maxlength="600" placeholder="e.g. The lights go out and giant donuts rain from the sky for 8 seconds, knocking down anyone they hit"></textarea>
+      <div style="display:flex;gap:8px;align-items:center"><button id="aiMake">Create event</button><small id="aiStatus" role="status"></small></div>
+      <small id="aiResult"></small>
+      <details id="aiKeyBox"><summary>Claude API key (optional)</summary>
+        <small>With a key, Claude reads your description and builds the event. Without one, a built-in reader that knows common words (rain, roll, explosion, lights out, donuts, ...) makes it. The key stays in this browser and is sent only to the Claude API.</small>
+        <input id="aiKey" type="password" autocomplete="off" placeholder="sk-ant-..." aria-label="Claude API key">
+      </details>
+    </div>
     <label>Place <select id="eventType" aria-label="Event type"></select></label>
     <small id="eventText"></small>
     <small style="color:var(--dim)">An event fires once, when the camera brings its X to the middle of the screen. Click the map to place one.</small>
@@ -83,5 +93,5 @@ dialog#newStage{background:var(--panel);color:var(--text);border:1px solid var(-
   <div class="row"><button id="nsCancel">Cancel</button><button id="nsCreate" class="go">Create</button></div>
 </form></dialog>
 <div id="status"><span id="hover">&nbsp;</span> <span id="msg"></span></div>
-<script src="romload.js"></script><script src="stage/stagedata.js"></script><script src="custom/tileset_school.js"></script><script src="custom/tileset_bowling.js"></script><script src="custom/tileset_android.js"></script><script src="stage/tileset.js"></script><script src="stage/events.js"></script><script src="stage/native_names.js"></script><script src="stage/enemies.js"></script><script src="stage/stages.js"></script><script src="custom/duffman.js"></script><script src="custom/rivet.js"></script><script src="custom/slugger.js"></script><script src="custom/moleman.js"></script><script src="custom/conehead_carl.js"></script><script src="custom/budget_knight.js"></script><script src="sim/video.js"></script><script src="stage/native_sprites.js"></script><script src="stage/editor.js"></script>
+<script src="romload.js"></script><script src="stage/stagedata.js"></script><script src="custom/tileset_school.js"></script><script src="custom/tileset_bowling.js"></script><script src="custom/tileset_android.js"></script><script src="stage/tileset.js"></script><script src="stage/recipes.js"></script><script src="stage/events.js"></script><script src="stage/native_names.js"></script><script src="stage/enemies.js"></script><script src="stage/stages.js"></script><script src="custom/duffman.js"></script><script src="custom/rivet.js"></script><script src="custom/slugger.js"></script><script src="custom/moleman.js"></script><script src="custom/conehead_carl.js"></script><script src="custom/budget_knight.js"></script><script src="sim/video.js"></script><script src="stage/native_sprites.js"></script><script src="stage/editor.js"></script>
 </body></html>
