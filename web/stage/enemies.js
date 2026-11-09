@@ -5,7 +5,7 @@
   // SCENES order from stagedata.js -> combat stream. Scenes 5/10/14 lead through intro states to 6/11/15.
   // Scene-to-stream mapping is read by the ROM at BA87 from E88D. Bonus rounds and ending do not use combat streams.
   const STAGES = [0, -1, 1, 3, 4, 5, 6, 8, -1, 9, 11, -1], BASE = 0x36000;
-  const SKINS = ['duffman', 'rivet', 'slugger', 'moleman', 'conehead_carl', 'budget_knight'];
+  const SKINS = ['duffman', 'rivet', 'slugger', 'moleman', 'conehead_carl', 'budget_knight', 'comic_book_guy'];
   const signed = n => (n << 24) >> 24;
   const enemy = row => (row.data[4] & 12) === 0 && row.data[7] <= 4;
   // Every record in the stream, for the editor: basic enemies, the stage's own characters and props (native objects

@@ -39,7 +39,7 @@ try:
         assert game.evaluate('Object.values(SIMPG.machine.stageEnemySkins).some(s=>s.id==="rivet")')
         game.evaluate('SIMPG.video.render()')
         assert game.evaluate('SIMPG.video.bmp.some(p=>p>=4096)')
-        assert game.evaluate('SIMPG.video.bmp.some(p=>p>=4128&&p<4144)'), 'Rivet must use his own palette'
+        assert game.evaluate('(()=>{const b=4096+16*Object.keys(SIMPENEMY_ASSETS).sort().indexOf("rivet");return SIMPG.video.bmp.some(p=>p>=b&&p<b+16)})()'), 'Rivet must use his own palette'
         os.makedirs(os.path.join(ROOT,'preview'),exist_ok=True)
         game.screenshot(path=os.path.join(ROOT,'preview/direct_gorge.png'))
         print('ok editor launches directly into playable gorge with Rivet and Duffman; no coin/start needed')
@@ -49,7 +49,7 @@ try:
         assert game.evaluate('SIMPLAUNCH.playable(SIMPG.machine,SIMPSTAGE.SCENES.find(s=>s.scene===9))')
         game.evaluate('SIMPG.video.render()')
         assert game.evaluate('SIMPG.video.bmp.some(p=>p>=4096)'), 'custom sprites must survive cached state restoration'
-        assert game.evaluate('SIMPG.video.bmp.some(p=>p>=4128&&p<4144)'), 'Rivet must survive cached state restoration'
+        assert game.evaluate('(()=>{const b=4096+16*Object.keys(SIMPENEMY_ASSETS).sort().indexOf("rivet");return SIMPG.video.bmp.some(p=>p>=b&&p<b+16)})()'), 'Rivet must survive cached state restoration'
         assert not errors,errors
         print(f'ok repeated launch restores the playable stage and custom sprites in {elapsed:.2f}s; no page errors')
         browser.close()
