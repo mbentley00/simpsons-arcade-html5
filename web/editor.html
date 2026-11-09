@@ -1,0 +1,68 @@
+<!doctype html><html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
+<title>Stage Editor</title><link rel="icon" href="data:,">
+<style>
+:root{--bg:#17120d;--panel:#231b13;--line:#4a3a28;--text:#f3e2c0;--dim:#b9a582;--acc:#ffc861;--acc2:#7ad0ff;--edit:#ff5d8f}
+*{box-sizing:border-box}
+html,body{margin:0;height:100%;background:var(--bg);color:var(--text);font:13px/1.35 system-ui,sans-serif}
+body{display:grid;grid-template-rows:auto 1fr auto;grid-template-columns:1fr 320px;grid-template-areas:"bar bar" "map side" "status side"}
+#bar{grid-area:bar;display:flex;flex-wrap:wrap;gap:6px 12px;align-items:center;padding:8px 12px;background:var(--panel);border-bottom:1px solid var(--line)}
+#bar h1{font:900 15px Georgia,serif;letter-spacing:.05em;color:var(--acc);margin:0 6px 0 0}
+#bar label{display:flex;gap:4px;align-items:center;white-space:nowrap}
+.grp{display:flex;gap:4px;align-items:center;padding-left:10px;border-left:1px solid var(--line)}
+select,button{font:inherit;color:var(--text);background:#33271b;border:1px solid var(--line);border-radius:5px;padding:3px 8px}
+button{cursor:pointer}button:hover:not(:disabled){border-color:var(--acc)}button:disabled{opacity:.4;cursor:default}
+button.on{background:var(--acc);color:#2a1a08;border-color:var(--acc)}
+button.go{background:#2f5d2a;border-color:#4f9446}
+#enemyPanel{padding:10px;display:flex;flex-direction:column;gap:8px;min-height:0;flex:1;overflow:auto}#enemyPanel[hidden]{display:none}
+#enemyList{width:100%;flex:1;min-height:130px}#enemyPanel label{display:flex;gap:6px;align-items:center}#enemyPanel input{width:70px;background:#17120d;border:1px solid var(--line);color:var(--text);padding:4px}
+#enemyPreview{width:96px;height:144px;image-rendering:pixelated;align-self:center;flex-shrink:0}#enemyNote{color:var(--dim);font-size:12px}#npcFields textarea{background:#17120d;color:var(--text);border:1px solid var(--line)}
+#mapwrap{grid-area:map;overflow:auto;position:relative;background:repeating-conic-gradient(#201913 0 25%,#2a2119 0 50%) 0 0/16px 16px}
+#map{display:block;image-rendering:pixelated;cursor:crosshair;touch-action:none}
+#side{grid-area:side;display:flex;flex-direction:column;min-height:0;background:var(--panel);border-left:1px solid var(--line)}
+#sel{display:flex;gap:10px;padding:10px;border-bottom:1px solid var(--line);align-items:center}
+#selc{width:96px;height:96px;image-rendering:pixelated;background:#000;border:1px solid var(--line)}
+#selinfo b{color:var(--acc)}
+#pickwrap{flex:1;overflow:auto;padding:6px 10px}
+#pick{display:block;width:100%;image-rendering:pixelated;cursor:pointer;background:#000}
+#side h2{font-size:12px;margin:8px 10px 0;color:var(--dim);font-weight:600;text-transform:uppercase;letter-spacing:.06em}
+#help{padding:8px 10px;border-top:1px solid var(--line);color:var(--dim);font-size:12px}
+#help kbd{background:#33271b;border:1px solid var(--line);border-radius:3px;padding:0 4px;color:var(--text);font:11px ui-monospace,monospace}
+#status{grid-area:status;padding:5px 12px;background:var(--panel);border-top:1px solid var(--line);font:12px ui-monospace,monospace;color:var(--dim);white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+#status b{color:var(--text)}
+#msg{color:var(--acc2)}
+@media (max-width:760px){body{grid-template-columns:1fr;grid-template-rows:auto 1fr 300px auto;grid-template-areas:"bar" "map" "side" "status"}#side{border-left:0;border-top:1px solid var(--line)}}
+</style></head>
+<body>
+<div id="bar">
+  <h1>STAGE EDITOR</h1>
+  <label>Stage <select id="scene"></select></label>
+  <label>Section <select id="area"></select></label>
+  <label title="Custom level art for this stage slot">Level art <select id="tileset"><option value="">Original</option></select></label>
+  <div class="grp"><button id="toolBlocks" class="on">Background</button><button id="toolEnemies">Enemies</button><button id="toolNpcs">NPCs</button></div>
+  <div class="grp">Layer <button id="l0">Back</button><button id="l1">Front</button></div>
+  <div class="grp"><button id="vOther" title="Show the other layer faded (O)">Other layer</button><button id="vGrid" title="Block grid (G)">Grid</button><button id="vEdits" title="Outline edited blocks (E)">Edits</button><button id="vZoom" title="Zoom (Z)">2&times;</button></div>
+  <div class="grp"><button id="undo" title="Ctrl+Z">Undo</button><button id="redo" title="Ctrl+Y">Redo</button><button id="revert" title="Undo every edit in this layer of this section">Revert layer</button></div>
+  <div class="grp"><button id="exp">Export</button><button id="imp">Import</button><input id="impf" type="file" accept=".json,application/json" hidden><button id="reset">Clear all edits</button></div>
+  <div class="grp"><button id="play" class="go" title="Start the selected stage automatically and skip introductions">Play this stage &#9654;</button></div>
+</div>
+<div id="mapwrap"><canvas id="map" width="256" height="256"></canvas></div>
+<div id="side">
+  <div id="sel"><canvas id="selc" width="32" height="32"></canvas><div id="selinfo"></div></div>
+  <div id="enemyPanel" hidden>
+    <label>Place <select id="enemyKind"><option value="rivet">Rivet</option><option value="slugger">Slugger (baseball mascot)</option><option value="duffman">Duffman</option><option value="moleman">Hans Moleman</option><option value="grunt">Standard enemy</option></select></label>
+    <canvas id="enemyPreview" width="64" height="96" aria-label="Enemy preview"></canvas>
+    <div id="enemyNote">Click empty map space to add. Drag a marker to move it. Select a marker and press Delete to remove. Enemy placements apply to the whole stage; use Main to position them.</div>
+    <select id="enemyList" size="6" aria-label="Enemies in this stage"></select>
+    <div style="display:flex;gap:8px"><label>X <input id="enemyX" type="number" min="0" max="65279" step="1"></label><label>Y <input id="enemyY" type="number" min="0" max="1016" step="8"></label></div>
+    <div><button id="enemyMove">Move selected</button><button id="enemyDelete">Delete selected</button></div>
+    <div id="npcFields" hidden><label>Name <input id="npcName" maxlength="40" style="width:100%"></label><label>Dialogue <textarea id="npcDialogue" maxlength="200" rows="3" style="width:100%"></textarea></label><button id="npcApply">Save NPC details</button></div>
+    <small id="entityHint">Custom enemies use the standard enemy's AI, attacks and collisions.</small>
+  </div>
+  <h2>Blocks in this layer's set</h2>
+  <div id="pickwrap"><canvas id="pick" width="256" height="32"></canvas></div>
+  <div id="help"><kbd>Left drag</kbd> paint &middot; <kbd>Right click</kbd> or <kbd>Alt</kbd>+click pick &middot; <kbd>1</kbd>/<kbd>2</kbd> layer &middot; <kbd>[</kbd> <kbd>]</kbd> block &middot; <kbd>G</kbd> grid &middot; <kbd>Z</kbd> zoom<br>
+  Edits are saved in this browser and used by the game page. Blocks are 32&times;32 px groups of 16 tiles from your ROM. Some map data is shared between sections, so an edit can show up in more than one place.</div>
+</div>
+<div id="status"><span id="hover">&nbsp;</span> <span id="msg"></span></div>
+<script src="romload.js"></script><script src="stage/stagedata.js"></script><script src="custom/tileset_school.js"></script><script src="stage/tileset.js"></script><script src="stage/enemies.js"></script><script src="custom/duffman.js"></script><script src="custom/rivet.js"></script><script src="custom/slugger.js"></script><script src="custom/moleman.js"></script><script src="stage/editor.js"></script>
+</body></html>

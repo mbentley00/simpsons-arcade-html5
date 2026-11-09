@@ -133,7 +133,8 @@
   }
   async function host(pub) {
     st.pub = pub === undefined ? getPub() : !!pub;
-    await G.ready; st.room = code(); st.role = 'host'; st.msg = 'Abrindo sala…'; render();
+    await G.ready; if (window.SIMPMODS) SIMPMODS.assertOnline();
+    st.room = code(); st.role = 'host'; st.msg = 'Abrindo sala…'; render();
     st.t = await SSRNET.open(KIND, { room: st.room, role: 'host', signal: SIGNAL, ice: await iceAll(), sim: SIM, meta, simnat: +(q.get('simnat') || 0) });
     st.s = makeSession('host', { frame: G.frameNo + 1 }); G.net = ctl;
     st.t.onlink = l => { st.s.addLink(l); render(); };
@@ -143,7 +144,8 @@
   async function join(room, watch) {
     if (!/^[A-Z0-9]{4,8}$/.test(room)) throw new Error('código inválido');
     st.autoWatch = !!watch;
-    await G.ready; st.room = room; st.role = 'guest'; st.msg = tr('Conectando…', 'Connecting…'); render(); show(true);
+    await G.ready; if (window.SIMPMODS) SIMPMODS.assertOnline();
+    st.room = room; st.role = 'guest'; st.msg = tr('Conectando…', 'Connecting…'); render(); show(true);
     st.s = makeSession('guest'); G.net = ctl;
     const ice = await iceAll(), gen = st.gen = (st.gen || 0) + 1, hasTurn = ice.some(x => /^turns?:/.test([].concat(x.urls)[0]));
     // attempt 1: direct + STUN + TURN (policy all); attempt 2 (if no link after DIRECT_S): fresh connection, relay only

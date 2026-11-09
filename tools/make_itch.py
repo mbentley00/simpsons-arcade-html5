@@ -24,7 +24,7 @@ def files():
 
 def stamp(arc, text):
     v = '?v=' + BUILD
-    if arc == 'index.html':
+    if arc.endswith('.html'):
         text = re.sub(r'(<script src="[^"?]+\.js)(")', r'\1' + v + r'\2', text)
         text = text.replace('<head>', f'<head><script>window.SIMP_BUILD={BUILD!r};</script>', 1)
     return text

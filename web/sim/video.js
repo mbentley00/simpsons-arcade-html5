@@ -13,7 +13,7 @@
       this.sprites = decodeSprites(board.obj);
       this.bmp = new Uint16Array(W * 264); this.pri = new Uint8Array(W * 264); // rows indexed by absolute screen y
       this.rgb = new Uint32Array(W * H); // 0x00RRGGBB
-      this.pens = new Uint32Array(4096);
+      this.pens = new Uint32Array(4112);
     }
     buildPens() {
       const p = this.b.pal, c5 = v => (v << 3) | (v >> 2), sh = v => Math.trunc(Math.fround(v * SH));
@@ -22,6 +22,10 @@
         const r = c5(w & 31), g = c5((w >> 5) & 31), b = c5((w >> 10) & 31);
         this.pens[i] = (r << 16) | (g << 8) | b;
         this.pens[i + 2048] = (sh(r) << 16) | (sh(g) << 8) | sh(b);
+      }
+      for (let j = 0; j < (this.customPalettes || []).length; j++) for (let i = 0; i < 16; i++) {
+        const pal = this.customPalettes[j], w = (pal[2 * i] << 8) | pal[2 * i + 1];
+        this.pens[4096 + j * 16 + i] = (c5(w & 31) << 16) | (c5((w >> 5) & 31) << 8) | c5((w >> 10) & 31);
       }
     }
     render() {
@@ -34,6 +38,7 @@
       this.bmp.fill(16 * idx[0]); this.pri.fill(0);
       this.drawLayer(layer[0], cb, 1); this.drawLayer(layer[1], cb, 2); this.drawLayer(layer[2], cb, 4);
       this.drawSprites(idx[1], pri);
+      if (this.afterSprites) this.afterSprites(this);
       return this.toRGB();
     }
     toRGB() { // ind16 -> RGB with the current palette (MAME resolves pens when the frame is shown)
@@ -89,6 +94,7 @@
         let code = ram[offs + 1]; const col = ram[offs + 6];
         const p = (col & 0x0f80) >> 6;
         const pmask = p <= lp[2] ? 0 : p <= lp[1] ? 0xf0 : p <= lp[0] ? 0xfc : 0xfe;
+        if (this.spriteOverride && this.spriteOverride(this, offs, pmask, n === w - 1)) continue;
         const color = colorbase + (col & 0x1f);
         let xa = 0, ya = 0;
         if (code & 1) xa += 1; if (code & 2) ya += 1; if (code & 4) xa += 2; if (code & 8) ya += 2; if (code & 0x10) xa += 4; if (code & 0x20) ya += 4;
@@ -146,7 +152,8 @@
             if (((1 << (pd & 0x1f)) & pmask) === 0) bmp[i] = (pd & 0xc0) === 0xc0 ? (cbase + s) + 2048 : cbase + s;
             pr[i] = 31;
           } else if ((pd & 0x80) === 0 && ((1 << (pd & 0x1f)) & pmask) === 0) {
-            bmp[i] = bmp[i] < 2048 ? bmp[i] + 2048 : bmp[i]; pr[i] = pd | 0x80;
+            const c0 = bmp[i]; // custom background pens (web/stage/tileset.js) have their shadow copy 0x100 above
+            bmp[i] = c0 < 2048 ? c0 + 2048 : c0 >= 0x2000 && c0 < 0x2100 ? c0 + 0x100 : c0; pr[i] = pd | 0x80;
           }
         }
       }

@@ -81,6 +81,28 @@ On a gamepad, the pad or stick moves, A or X attacks, B or Y jumps, Select is th
 
 F7 opens and closes the multiplayer panel. There is also a button on the page.
 
+Use **Pause (P)** or press **P** to pause and resume offline play. **Mute audio (F8)** or **F8** turns off all music and sound effects; this setting is remembered in the browser. Muting works online too. Pause is unavailable in online rooms so the players stay in sync.
+
+## Arcade Remix combat and run upgrades
+
+Offline play now includes confirmed-hit chains, a finisher on every third hit, **Up + Attack** launchers and air-hit bonuses. **C** dodges with a short invulnerable dash. **Q** spends 50 focus on a nearby-area Focus Burst; normal hits and KOs build focus. On a standard gamepad, LB dodges and RB uses Focus Burst. The HUD shows health, combo, focus and the current run build. Basic enemies receive enough health to support multi-hit combat. Finishers, launchers and counters get a short hit-stop, screen shake and callout (skipped with reduced motion). Dodging through a real enemy hit is a **perfect dodge**: it refunds focus and opens a one-second counter window with +50% damage. From stage 2, some enemies spawn as **elites** with extra health; defeating one restores focus and health.
+
+Clearing a combat stage shows a results card (time, best combo, KOs, damage taken, elites, counters) with an S–C rank, then a seeded choice of upgrades. Cards are common, rare or epic: rare and epic cards add synergies such as Momentum (long combos hit harder), Juggler (air hits pop enemies back up), Riposte (stronger counters), Shockwave (finishers hit nearby enemies) and Overcharge (cheaper, wider Focus Burst). An A rank guarantees a rare or epic card; an S rank adds a fourth card. Damage, armor, maximum health, healing on KOs, movement speed, focus gain, combo duration and dodge upgrades also carry through the run. Stage 4's two parts share one upgrade checkpoint; bonus rounds do not grant another draft. Reaching the ending completes the run. Returning to the title resets upgrades. **Start a new run** in the HUD starts at the street stage.
+
+These gameplay modifications are offline. Use `?mods=0` for original behavior and online play, or `?combat=0` to disable the combat/run systems while retaining editor scenery and characters.
+
+## Stage editor
+
+Open `editor.html` on the same server to paint the two scrolling background layers, save edits in this browser, and export or import edits as JSON. **Play this stage** automatically starts a player in the selected stage and skips displaying startup and introductions. The first launch prepares the game in the background; subsequent launches restore a private browser checkpoint. Editing the stage invalidates that checkpoint. Background edits change scenery while collision stays unchanged. Shared map data can make an edit appear in several places.
+
+Select **Enemies** to add Slugger, Rivet, Duffman, Hans Moleman or a standard enemy, drag spawn markers, or remove basic enemies. Slugger is a man inside a giant baseball mascot costume; Rivet is an original maintenance goon in a navy cap, orange vest and teal coveralls. Custom characters have sixteen animation frames, individual 16-colour palettes and a 48×72 display size. They use the original standard enemy's combat behavior. Enemy edits support undo/redo and export/import. Stage scripts and other object records stay in the spawn stream. Use Main for placement; markers describe spawn coordinates, and the original game decides when enemies enter the screen.
+
+Select **NPCs** to place a friendly custom character, edit its name and dialogue, and move or delete it with the same tools. NPCs never attack, take damage or count as enemies. A blue name label identifies them in game; approach and press **E** to talk. Dialogue pauses gameplay until closed. NPC data is included in the editor's save, undo/redo and JSON export/import.
+
+**Level art** turns Stage 1 into **Springfield Elementary**, a new level with original background art. It has a schoolyard with a brick school, a school bus and a gym, followed by an indoor hallway with lockers, classrooms and a trophy case. The editor's block picker then lists the school blocks for painting. Collision, enemies and the stage script are still Stage 1's. Set Level art back to Original to restore the street.
+
+Use `?mods=0` for online play with the original ROM. The editor's local edits and scene selection are disabled on room invite links; a modified offline game asks you to open a fresh unmodified page before creating or joining a room. See [the format and usage notes](docs/stage-format.md) for limitations and checks.
+
 ## Playing online
 
 Create a room from the panel. The invite is this page's own address plus `?sala=` and a short code. Each person opens that link in a browser, then uses coin and start.
@@ -123,10 +145,17 @@ Simpsons checks that need your zip, and in several cases a MAME log you capture 
 - `test/state_check.js` — save, load, and rollback on the board.
 - `test/net_check.js` — in-process rollback, spectators, chat, nicknames.
 - `test/browser_check.py`, `test/test_coin_hint.py`, `test/test_gfx_modes.py`, `test/test_netplay.py`, `test/test_room_list.py`, `test/test_signal_list.sh`, `test/test_relay.py` — page checks. The relay script expects a local `turnserver` unless `SIGNAL` points at a host you run.
+- `test/test_stage_editor.py` — editor painting, persistence, imports, online guards, and starting an edited stage in Chromium.
+- `test/test_playback_controls.py` — pause/resume, audio muting and persistence, keyboard shortcuts, and the online pause guard.
+- `test/test_enemy_editor.py`, `test/enemy_check.js` — enemy editing and custom sprite rendering; the Node check also needs `unzip` on PATH.
+- `test/test_direct_launch.py`, `test/launch_check.js` — direct editor launch, cached state restoration with custom sprites, and native initialization of every editor scene. The Node check needs `unzip` on PATH.
+- `test/tileset_check.js`, `test/test_school_level.py` — Springfield Elementary carriers, map edits, in-game rendering of the custom art, and the editor's level art flow.
+- `test/combat_unit.js`, `test/combat_native.js`, `test/test_remix_npcs.py` — confirmed hits, native launcher/dodge physics, upgrade drafts/effects/run reset, friendly NPC authoring and dialogue. The native Node check needs `unzip` on PATH.
 
-This one does not load the game ROM:
+These do not load the game ROM:
 
 - `test/konami_unit.js` — reset, IRQ, FIRQ, and NMI on a synthetic 64 KB memory image.
+- `test/stage_check.js` — patch validation, boot timing, scene selection, and online isolation on synthetic data.
 
 `test/promo_plan_simpsons.js`, `test/promo_live_simpsons.py`, and `test/promo_render_simpsons.py` drive a local capture. They read `roms/simpsons.zip` at runtime and write under `/tmp`. They do not embed ROM bytes.
 
