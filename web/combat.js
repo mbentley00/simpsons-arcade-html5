@@ -60,6 +60,11 @@
     }
     if(text) ui.callout={text,kind,p,at:t,calm};
   }
+  // A hit written the way the game's own attacks write it: hit kind at +0x1e, health, attacker pointer at +0x25, then
+  // flag 0x20; the enemy's handler plays the reaction next frame. Kinds seen from native attacks: 0x11/0x12 flinch,
+  // 0x14 knocks the enemy into the air and down. Any other kind is ignored (no flinch, no knockdown).
+  const HIT={flinch:0x12,knockdown:0x14};
+  function hit(r,e,health,kind,attacker) { r[e]&=~0x20; r[e+0x1e]=kind; r[e+0x1b]=health; put(r,e+0x25,0x4000+attacker); r[e]|=0x20; }
   function landed(m,p,o,damage,remaining,kind) {
     const s=m.arcadeCombat, a=s.players[p], r=m.ram;
     a.combo=m.frame-a.lastHit<=flowWindow(s)?a.combo+1:1; a.lastHit=m.frame; a.best=Math.max(a.best,a.combo);
@@ -71,7 +76,7 @@
     let waved=0;
     if(finisher&&kind!=='special'&&(s.upgrades.shockwave||0)) {
       for(let e=0xf80;e<0x1280;e+=0x60) if(e!==o&&(r[e]&0x40)&&!(r[e]&4)&&r[e+0x1b]&&near(r,e,o,72,32)) {
-        r[e+0x1b]=Math.max(0,r[e+0x1b]-4*s.upgrades.shockwave); r[e]|=0x20; r[e+0x1e]=3; put(r,e+0x25,0x4000+0xa40+p*0xc0);
+        hit(r,e,Math.max(0,r[e+0x1b]-4*s.upgrades.shockwave),HIT.flinch,0xa40+p*0xc0);
         s.effects.push({o:e,launch:false,dir:word(r,e+12)<word(r,o+12)?-1:1}); waved++;
         if(!r[e+0x1b]) defeated(m,p,e,false);
       }
@@ -215,7 +220,7 @@
         a.focus-=burstCost(s); m.inputs['P'+(action.p+1)]&=~0x30;
         let hits=0; const reach=88+24*(s.upgrades.burst||0);
         for(let e=0xd40;e<0x1640;e+=0x60) if((r[e]&0x40)&&!(r[e]&4)&&r[e+0x1b]&&near(r,e,o,reach,38)) {
-          const damage=Math.ceil(8*(1+.2*(s.upgrades.power||0))); r[e+0x1b]=Math.max(0,r[e+0x1b]-damage); r[e]|=0x20; r[e+0x1e]=3; put(r,e+0x25,0x4000+o);
+          const damage=Math.ceil(8*(1+.2*(s.upgrades.power||0))); hit(r,e,Math.max(0,r[e+0x1b]-damage),HIT.knockdown,o);
           landed(m,action.p,e,damage,r[e+0x1b],'special'); if(regular(e))s.effects.push({o:e,launch:true,dir:a.dir}); hits++;
         }
         message(m,hits?'FOCUS BURST!':'FOCUS BURST - NO TARGETS'); if(hits) feedback('launcher','FOCUS BURST!',action.p);
@@ -236,7 +241,7 @@
         if(!(r[e]&0x40)||(r[e]&4)||!r[e+0x1b]||b.hit.includes(e)) continue;
         if(Math.abs(word(r,e+12)+c-b.x)>=BALL.reachX||Math.abs(word(r,e+17)-b.z)>=BALL.reachZ) continue;
         const damage=Math.ceil(BALL.damage*(1+.2*(s.upgrades.power||0)));
-        r[e+0x1b]=Math.max(0,r[e+0x1b]-damage); r[e]|=0x20; r[e+0x1e]=3; put(r,e+0x25,0x4000+o);
+        hit(r,e,Math.max(0,r[e+0x1b]-damage),HIT.knockdown,o);
         b.hit.push(e); landed(m,b.p,e,damage,r[e+0x1b],'ball'); if(regular(e)) s.effects.push({o:e,launch:false,dir:b.dir});
         if(b.hit.length===3) { message(m,'STRIKE!'); feedback('strike','STRIKE!',b.p); }
       }
@@ -469,7 +474,7 @@
     });
   }
   function updateUI() { if(ui&&machine&&!machine.arcadeCombat?.offers.length) { ui.cards=[]; ui.last=''; } }
-  const api={enabled,BALL,create,install,beforeFrame,afterFrame,request,choose,rate,UPGRADES,RARITY,drawOverlay,flash:feedback,
+  const api={enabled,BALL,create,install,beforeFrame,afterFrame,request,choose,rate,UPGRADES,RARITY,drawOverlay,flash:feedback,gfx:{text,center,tw,COL},
     help(open){setHelp(!!open);},get helpOpen(){return !!ui?.help;},get selected(){return ui?ui.sel:0;},select(i){if(ui&&machine?.arcadeCombat?.offers.length)ui.sel=Math.max(0,Math.min(machine.arcadeCombat.offers.length-1,i|0));},get cards(){return ui?ui.cards.slice():[];},
     get drafting(){return !!machine?.arcadeCombat?.offers.length;},
     get blocked(){return !!machine?.arcadeCombat?.offers.length||!!ui?.help||now()<stopUntil;},

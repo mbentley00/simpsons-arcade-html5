@@ -10,12 +10,15 @@
   const enemyStage = () => E.STAGES[st.scene];
   const visibleEntity = row => mode === 'npcs' ? row.role === 'npc' && E.enemy(row) : row.role !== 'npc' && (E.kind(row) !== 'script' || $('showScripts').checked);
   const PREFS = 'simpsons.editor.prefs';
-  const st = { scene: 0, area: 0, layer: 1, other: true, grid: true, edits: true, zoom: 2, sel: 0 };
+  const st = { scene: 0, custom: null, area: 0, layer: 1, other: true, grid: true, edits: true, zoom: 2, sel: 0 };
   let orig, work, D, tiles, bytes = {}, sec, ram, atlas = [null, null], nBlk = [0, 0], cellIx = new Map(), metaMax = new Map();
   let undo = [], redo = [], stroke = null, saveT = 0;
-  // custom level art (web/stage/tileset.js): tilesets = { scene: { id, maps: [back, front] } }. In a tiled section the
-  // picker lists the custom blocks and painting edits the custom maps; the stage's ROM maps (and collision) stay as they are.
-  let tilesets = {}, tset = null, tmaps = null, native = [null, null];
+  // Custom stages (web/stage/stages.js): stages = { id: { name, scene, tileset, enemies, events } }. st.custom is the
+  // selected one (null = an original stage). A custom stage runs on an original stage's ground with its own level art
+  // (web/stage/tileset.js), enemy list and scripted events (web/stage/events.js); the original stage is not changed.
+  // In its art section the picker lists the custom blocks and painting edits the custom maps.
+  let stages = {}, tset = null, tmaps = null, native = [null, null], eventSel = -1, eventDrag = null;
+  const custom = () => st.custom && stages[st.custom] || null;
   const tileKey = (l, i) => 't' + l + ':' + i;
   const map = $('map'), ctx = map.getContext('2d'), pick = $('pick'), pctx = pick.getContext('2d'), selc = $('selc'), sctx = selc.getContext('2d');
   const hex = (n, w) => '0x' + n.toString(16).padStart(w, '0');
@@ -25,7 +28,7 @@
   function loadBytes() { try { const j = JSON.parse(localStorage.getItem(S.PATCH_KEY) || 'null'); return j && j.bytes && typeof j.bytes === 'object' ? j.bytes : {}; } catch (e) { return {}; } }
   function saveNow() {
     clearTimeout(saveT); saveT = 0;
-    try { const n = Object.keys(bytes).length + Object.keys(enemyEdits).length + Object.keys(tilesets).length; if (n) localStorage.setItem(S.PATCH_KEY, JSON.stringify({ v: 1, bytes, enemies: enemyEdits, tilesets })); else localStorage.removeItem(S.PATCH_KEY); }
+    try { const n = Object.keys(bytes).length + Object.keys(enemyEdits).length + Object.keys(stages).length; if (n) localStorage.setItem(S.PATCH_KEY, JSON.stringify({ v: 1, bytes, enemies: enemyEdits, stages })); else localStorage.removeItem(S.PATCH_KEY); }
     catch (e) { msg('Could not save edits in this browser: ' + e.message); }
     countEdits();
   }
@@ -36,13 +39,14 @@
       const p = JSON.parse(localStorage.getItem(PREFS) || '{}');
       if (!p || typeof p !== 'object') return;
       for (const k of ['scene', 'area', 'sel']) if (Number.isInteger(p[k]) && p[k] >= 0) st[k] = p[k];
+      if (typeof p.custom === 'string') st.custom = p.custom;
       if (p.layer === 0 || p.layer === 1) st.layer = p.layer;
       if (p.zoom === 1 || p.zoom === 2) st.zoom = p.zoom;
       for (const k of ['other', 'grid', 'edits']) if (typeof p[k] === 'boolean') st[k] = p[k];
     } catch (e) { /* defaults */ }
   }
   function touch(off) { for (const i of [off, off + 1]) { if (work[i] === orig[i]) delete bytes[i]; else bytes[i] = work[i]; } saveSoon(); }
-  function countEdits() { $('exp').disabled = !Object.keys(bytes).length && !Object.keys(enemyEdits).length && !Object.keys(tilesets).length; }
+  function countEdits() { $('exp').disabled = !Object.keys(bytes).length && !Object.keys(enemyEdits).length && !Object.keys(stages).length; }
 
   // ---------- data
   const word = off => (work[off] << 8) | work[off + 1];
@@ -72,9 +76,9 @@
   function loadSection() {
     const sc = S.SCENES[st.scene];
     sec = D.section(sc.st, st.area); ram = D.palette(sc);
-    const tv = tilesets[sc.scene], ts = tv && SIMPTILES.sets[tv.id];
+    const cs = custom(), tv = cs && cs.tileset, ts = tv && SIMPTILES.sets[tv.id];
     tset = ts && ts.area === st.area ? ts : null; tmaps = tset ? tv.maps : null;
-    enemyRows = enemyStage() < 0 ? [] : clone(enemyEdits[enemyStage()] || E.read(orig, enemyStage())); enemySelected = -1; enemyHover = -1;
+    enemyRows = enemyStage() < 0 ? [] : clone((cs ? cs.enemies : enemyEdits[enemyStage()]) || E.read(orig, enemyStage())); enemySelected = -1; enemyHover = -1; eventSel = -1;
     fillNativeKinds(); showEnemyPreview();
     if (!sec.layers[st.layer]) st.layer = sec.layers[0] ? 0 : 1;
     buildAtlas(0); buildAtlas(1);
@@ -85,7 +89,7 @@
     const Ls = sec.layers.filter(Boolean);
     map.width = Math.max(...Ls.map(L => L.map.screens.length)) * 256; map.height = Math.max(...Ls.map(L => L.map.rows)) * CELL;
     if (st.sel >= nBlk[st.layer]) st.sel = 0;
-    if (enemyStage() < 0 && mode !== 'blocks') setMode('blocks');
+    if ((enemyStage() < 0 && mode !== 'blocks') || (mode === 'events' && !eventTypes().length)) setMode('blocks');
     applyZoom(); drawAll(); drawPicker(); drawSel(); syncUi(); syncEnemies(); savePrefs();
   }
 
@@ -114,7 +118,7 @@
       if (x % 8 === 0) { ctx.strokeStyle = 'rgba(255,200,97,.7)'; ctx.beginPath(); ctx.moveTo(px + 0.5, py); ctx.lineTo(px + 0.5, py + CELL); ctx.stroke(); }
     }
   }
-  function drawAll() { ctx.clearRect(0, 0, map.width, map.height); for (let x = 0; x < map.width / CELL; x++) for (let y = 0; y < map.height / CELL; y++) drawCell(x, y); if (mode !== 'blocks') drawEnemies(); }
+  function drawAll() { ctx.clearRect(0, 0, map.width, map.height); for (let x = 0; x < map.width / CELL; x++) for (let y = 0; y < map.height / CELL; y++) drawCell(x, y); if (mode === 'enemies' || mode === 'npcs') drawEnemies(); if (mode === 'events') drawEvents(); }
   function redrawOff(off) { for (const [, x, y] of cellIx.get(off) || []) drawCell(x, y); }
   function drawPicker() {
     const n = nBlk[st.layer], rows = Math.max(1, Math.ceil(n / 8));
@@ -132,7 +136,10 @@
   }
   function applyZoom() { map.style.width = map.width * st.zoom + 'px'; map.style.height = map.height * st.zoom + 'px'; }
   function syncUi() {
-    $('scene').value = st.scene; fillAreas(); fillTilesets();
+    fillScenes(); fillAreas(); fillTilesets();
+    $('stageRename').hidden = $('stageDelete').hidden = !custom();
+    $('toolEvents').disabled = !eventTypes().length;
+    $('toolEvents').title = eventTypes().length ? 'Place scripted events (runaway ball, pin storm, ...)' : custom() ? 'This level art has no scripted events yet' : 'Scripted events are part of custom stages: make one with New stage';
     for (const l of [0, 1]) { $('l' + l).classList.toggle('on', st.layer === l); $('l' + l).disabled = !sec.layers[l]; }
     $('vOther').classList.toggle('on', st.other); $('vGrid').classList.toggle('on', st.grid); $('vEdits').classList.toggle('on', st.edits); $('vZoom').classList.toggle('on', st.zoom === 2);
     $('undo').disabled = !undo.length; $('redo').disabled = !redo.length; countEdits();
@@ -140,23 +147,59 @@
     $('toolNpcs').disabled = enemyStage() < 0;
     $('toolEnemies').title = enemyStage() < 0 ? 'Enemy placement is available in combat stages' : 'Place and move enemies';
   }
+  function fillScenes() {
+    const sel = $('scene'); sel.innerHTML = '';
+    const add = (parent, value, text) => { const o = document.createElement('option'); o.value = value; o.textContent = text; parent.appendChild(o); };
+    const og = document.createElement('optgroup'); og.label = 'Original stages'; S.SCENES.forEach((sc, i) => add(og, i, sc.name)); sel.appendChild(og);
+    const mine = document.createElement('optgroup'); mine.label = 'Your stages'; mine.id = 'customStages';
+    for (const [id, cs] of Object.entries(stages)) add(mine, 'c:' + id, `${cs.name} (on ${S.SCENES[SIMPCUSTOM.sceneIndex(cs.scene)].name})`);
+    if (Object.keys(stages).length < SIMPCUSTOM.MAX) add(mine, 'new', '+ New stage…');
+    sel.appendChild(mine); sel.value = custom() ? 'c:' + st.custom : String(st.scene);
+  }
   function fillTilesets() {
-    const sel = $('tileset'), sc = S.SCENES[st.scene], set = SIMPTILES.forScene(sc.scene);
-    sel.length = 1; if (set) { const o = document.createElement('option'); o.value = set.id; o.textContent = set.name; sel.appendChild(o); }
-    sel.disabled = !set; sel.value = tilesets[sc.scene] ? tilesets[sc.scene].id : '';
-    sel.title = set ? `Replace ${sc.name} with the ${set.name} level (new background art; the original collision and enemies stay)` : 'No custom level art for this stage yet';
-    [...$('scene').options].forEach((o, i) => { const s2 = S.SCENES[i], tv = tilesets[s2.scene]; o.textContent = tv ? `${SIMPTILES.sets[tv.id].name} (${s2.name} slot)` : s2.name; });
+    const sel = $('tileset'), cs = custom(), sc = S.SCENES[st.scene], all = cs ? SIMPTILES.forSceneAll(sc.scene) : [], set = all[0];
+    sel.length = 1; sel.options[0].textContent = 'Original';
+    for (const t of all) { const o = document.createElement('option'); o.value = t.id; o.textContent = t.name; sel.appendChild(o); }
+    sel.disabled = !set; sel.value = cs && cs.tileset ? cs.tileset.id : '';
+    sel.title = !cs ? 'Original stages keep their own art. Choose “+ New stage…” to build a level with new art.' : set ? `Background art for ${cs.name} (the ground and collision are ${sc.name}'s)` : `No custom level art for ${sc.name}'s ground yet`;
   }
   function setTileset(id) {
-    const sc = S.SCENES[st.scene], set = SIMPTILES.forScene(sc.scene); if (!set || (tilesets[sc.scene] ? tilesets[sc.scene].id : '') === id) return;
+    const cs = custom(), sc = S.SCENES[st.scene], cur = cs && cs.tileset ? cs.tileset.id : '', set = cs && SIMPTILES.sets[id || cur];
+    if (!set || set.scene !== sc.scene || cur === id) return;
+    if (id && cur && !confirm(`Switch ${cs.name} to the ${set.name} art? Painting done in the current art and its scripted events are replaced.`)) { fillTilesets(); return; }
     if (id) {
-      tilesets[sc.scene] = { id, maps: SIMPTILES.defaults(set) }; msg(`${set.name} replaces ${sc.name}. Paint with its blocks, then press Play. Walkable ground and collision stay ${sc.name}'s.`);
+      cs.tileset = { id, maps: SIMPTILES.defaults(set) }; cs.events = SIMPEVENTS.defaults(id);
+      msg(`${cs.name} now uses the ${set.name} art. Paint with its blocks, then press Play.`);
     } else {
-      if (!confirm(`Remove ${set.name} and show the original ${sc.name} again? Painting done in ${set.name} is lost.`)) { fillTilesets(); return; }
-      delete tilesets[sc.scene]; msg(`Restored the original ${sc.name}.`);
+      if (!confirm(`Show ${sc.name}'s original art in ${cs.name}? Painting done in ${set.name} and its scripted events are removed.`)) { fillTilesets(); return; }
+      cs.tileset = null; cs.events = []; msg(`${cs.name} now shows ${sc.name}'s original art.`);
     }
     undo = []; redo = []; st.area = set.area; st.sel = 0; saveNow(); loadSection();
   }
+  // ---------- custom stages
+  function openNewStage() {
+    const sel = $('nsTemplate'); sel.innerHTML = '';
+    SIMPCUSTOM.templates().forEach((t, i) => { const o = document.createElement('option'); o.value = i; o.textContent = t.label; sel.appendChild(o); });
+    $('nsName').value = ''; $('newStage').showModal(); $('nsName').focus();
+  }
+  function createStage(name, t) {
+    const set = t.art && SIMPTILES.sets[t.art], nm = (name || '').trim() || (set ? set.name : 'New stage');
+    const id = SIMPCUSTOM.newId(stages, nm); stages[id] = SIMPCUSTOM.make(nm, t.scene, t.art);
+    st.custom = id; st.scene = SIMPCUSTOM.sceneIndex(t.scene); st.area = set ? set.area : 0; st.sel = 0; undo = []; redo = [];
+    saveNow(); loadSection(); msg(`Created ${stages[id].name}. It plays on ${S.SCENES[st.scene].name}'s ground; the original stage is unchanged.`);
+    return id;
+  }
+  $('nsCreate').onclick = e => { e.preventDefault(); const t = SIMPCUSTOM.templates()[+$('nsTemplate').value]; $('newStage').close(); if (t) createStage($('nsName').value, t); };
+  $('nsCancel').onclick = e => { e.preventDefault(); $('newStage').close(); syncUi(); };
+  $('newStage').addEventListener('close', () => syncUi());
+  $('stageRename').onclick = () => {
+    const cs = custom(); if (!cs) return; const n = prompt('Stage name', cs.name); if (n === null) return;
+    cs.name = n.trim().slice(0, 40) || cs.name; saveNow(); syncUi(); msg(`Renamed to ${cs.name}.`);
+  };
+  $('stageDelete').onclick = () => {
+    const cs = custom(); if (!cs || !confirm(`Delete ${cs.name}? Its art, enemies and events are lost. The original stages are not affected.`)) return;
+    delete stages[st.custom]; st.custom = null; st.area = 0; undo = []; redo = []; saveNow(); loadSection(); msg(`Deleted ${cs.name}.`);
+  };
   $('tileset').onchange = e => setTileset(e.target.value);
   function fillAreas() {
     const sel = $('area'), n = D.sectionCount(S.SCENES[st.scene].st); sel.innerHTML = '';
@@ -170,6 +213,7 @@
     return { x: Math.floor((e.clientX - r.left) / k), y: Math.floor((e.clientY - r.top) / k) };
   }
   function paint(x, y) {
+    if (custom() && !tset) { msg(`This section is ${S.SCENES[st.scene].name}'s own ground. Paint it on the original stage, or pick the section with ${custom().name}'s art.`); return; }
     if (tset) {
       if (x < 0 || y < 0 || x >= tset.cols || y >= tset.rows) return;
       const i = y * tset.cols + x, before = tmaps[st.layer][i]; if (before === st.sel) return;
@@ -187,16 +231,19 @@
   }
   function setWord(off, w) { work[off] = w >> 8; work[off + 1] = w & 0xff; touch(off); redrawOff(off); }
   function setTile(key, id) { // custom level cell: key = tileKey(layer, index)
-    const [l, i] = key.slice(1).split(':').map(Number), sc = S.SCENES[st.scene], tv = tilesets[sc.scene]; if (!tv) return;
+    const [l, i] = key.slice(1).split(':').map(Number), tv = custom() && custom().tileset; if (!tv) return;
     tv.maps[l][i] = id; saveSoon();
     if (tset && tv.maps === tmaps) drawCell(i % tset.cols, Math.floor(i / tset.cols));
   }
   function step(from, to, key) {
     const s = from.pop(); if (!s) return;
-    if (s.enemyStage !== undefined) {
-      enemyEdits[s.enemyStage] = clone(s[key]);
-      if (JSON.stringify(enemyEdits[s.enemyStage]) === JSON.stringify(E.read(orig, s.enemyStage))) delete enemyEdits[s.enemyStage];
-      if (s.enemyStage === enemyStage()) { enemyRows = clone(s[key]); enemySelected = -1; syncEnemies(); drawAll(); }
+    if (s.events !== undefined) {
+      if (stages[s.events]) stages[s.events].events = clone(s[key]);
+      if (s.events === st.custom) { eventSel = -1; syncEvents(); drawAll(); }
+      saveSoon();
+    } else if (s.enemyStage !== undefined) {
+      storeEnemies(s.enemyStage, s.custom, s[key]);
+      if (s.enemyStage === enemyStage() && (s.custom || null) === (st.custom || null)) { enemyRows = clone(s[key]); enemySelected = -1; syncEnemies(); drawAll(); }
       saveSoon();
     } else for (const [off, c] of s.changes) typeof off === 'string' ? setTile(off, c[key]) : setWord(off, c[key]);
     to.push(s); scanMetaMax(); syncUi(); drawSel(); msg((key === 'before' ? 'Undid ' : 'Redid ') + s.label);
@@ -212,6 +259,7 @@
   map.addEventListener('contextmenu', e => e.preventDefault());
   map.addEventListener('pointerdown', e => {
     if (!sec) return;
+    if (mode === 'events') { eventDown(e); return; }
     if (mode !== 'blocks') { enemyDown(e); return; }
     const { x, y } = cellAt(e);
     if (e.button === 2 || e.altKey) { pickAt(x, y); return; }
@@ -220,6 +268,11 @@
   });
   map.addEventListener('pointermove', e => {
     if (!sec) return;
+    if (mode === 'events') {
+      const p = enemyPoint(e); $('hover').textContent = `Event trigger: X ${p.x}`;
+      if (eventDrag && custom()) { custom().events[eventSel].x = p.x; syncEvents(); drawAll(); }
+      return;
+    }
     if (mode !== 'blocks') {
       const p = enemyPoint(e); $('hover').textContent = `Enemy placement: X ${p.x}, Y ${p.y}`;
       if (!enemyDrag) {
@@ -231,6 +284,7 @@
     hover(e); if (stroke) { const { x, y } = cellAt(e); paint(x, y); }
   });
   const end = () => {
+    if (eventDrag) { const d = eventDrag; eventDrag = null; commitEvents(d.before, 'Move ' + SIMPEVENTS.TYPES[custom().events[eventSel].type].name, eventSel); return; }
     if (enemyDrag) { const before = enemyDrag; enemyDrag = null; commitEnemies(before, 'move enemy'); return; }
     if (!stroke) return; const s = stroke; stroke = null; commit(s, `paint (${s.size} block${s.size === 1 ? '' : 's'})`); if (s.size) { scanMetaMax(); drawSel(); }
   };
@@ -308,7 +362,7 @@
     }
     nativeCache.set(cap, res); return res;
   }
-  window.SIMPEDITOR_TEST = { nativePreview }; // for test/test_native_characters.py
+  window.SIMPEDITOR_TEST = { nativePreview, createStage: (name, art, scene) => createStage(name, { art, scene }), get stages() { return stages; } }; // for test/test_native_characters.py
   const enemyName = row => row.role === 'npc' ? (row.npcName || assets[row.skin]?.name) : assets[row.skin]?.name || E.label(row, enemyStage());
   function drawEnemies() {
     ctx.imageSmoothingEnabled = false;
@@ -350,12 +404,16 @@
     $('npcName').value = selected && row.role === 'npc' ? row.npcName || '' : '';
     $('npcDialogue').value = selected && row.role === 'npc' ? row.dialogue || '' : '';
   }
+  function storeEnemies(stage, cid, rows) { // a custom stage keeps its own list; null = the original stage's list
+    const same = JSON.stringify(rows) === JSON.stringify(E.read(orig, stage));
+    if (cid) { if (stages[cid]) stages[cid].enemies = same ? null : clone(rows); return; }
+    if (same) delete enemyEdits[stage]; else enemyEdits[stage] = clone(rows);
+  }
   function commitEnemies(before, label) {
     if (JSON.stringify(before) === JSON.stringify(enemyRows)) return;
-    const stage = enemyStage(); enemyEdits[stage] = clone(enemyRows);
-    if (JSON.stringify(enemyRows) === JSON.stringify(E.read(orig, stage))) delete enemyEdits[stage];
-    undo.push({ enemyStage: stage, before, after: clone(enemyRows), label }); if (undo.length > 500) undo.shift(); redo = [];
-    saveSoon(); syncUi(); syncEnemies(); drawAll(); msg(label + '. Saved for this stage.');
+    const stage = enemyStage(); storeEnemies(stage, st.custom, enemyRows);
+    undo.push({ enemyStage: stage, custom: st.custom, before, after: clone(enemyRows), label }); if (undo.length > 500) undo.shift(); redo = [];
+    saveSoon(); syncUi(); syncEnemies(); drawAll(); msg(label + (custom() ? `. Saved in ${custom().name}.` : '. Saved for this stage.'));
   }
   function enemyPoint(e) {
     const r = map.getBoundingClientRect();
@@ -412,29 +470,96 @@
   }
   $('npcApply').onclick=saveNpcDetails;
   $('npcName').onchange=saveNpcDetails; $('npcDialogue').onchange=saveNpcDetails;
+  // ---------- scripted events (custom stages): markers at their trigger X; an event fires when the camera brings that X
+  // to the middle of the screen
+  const eventTypes = () => { const cs = custom(); return cs && cs.tileset ? SIMPEVENTS.typesFor(cs.tileset.id) : []; };
+  const EVCOL = { ball: '#ff5d5d', pins: '#f3f3f3', cosmic: '#d98cff', frenzy: '#7ad0ff' };
+  function drawEvents() {
+    const cs = custom(); if (!cs) return;
+    cs.events.forEach((ev, i) => {
+      const sel = i === eventSel, col = EVCOL[ev.type] || '#ffc861', name = SIMPEVENTS.TYPES[ev.type].name;
+      ctx.strokeStyle = col; ctx.lineWidth = sel ? 3 : 2; ctx.setLineDash([6, 4]); ctx.beginPath(); ctx.moveTo(ev.x + 0.5, 0); ctx.lineTo(ev.x + 0.5, map.height); ctx.stroke(); ctx.setLineDash([]);
+      ctx.font = 'bold 11px system-ui'; const w = ctx.measureText(name).width + 10, y = 8 + (i % 3) * 18;
+      ctx.fillStyle = 'rgba(0,0,0,.85)'; ctx.fillRect(ev.x + 3, y, w, 15); ctx.strokeStyle = sel ? '#fff' : col; ctx.lineWidth = 1; ctx.strokeRect(ev.x + 3.5, y + 0.5, w - 1, 14);
+      ctx.fillStyle = col; ctx.fillText(name, ev.x + 8, y + 11);
+    });
+  }
+  function syncEvents() {
+    const cs = custom(), list = $('eventList'), types = eventTypes(); list.innerHTML = '';
+    const kind = $('eventType'), keep = kind.value; kind.innerHTML = '';
+    for (const t of types) { const o = document.createElement('option'); o.value = t; o.textContent = SIMPEVENTS.TYPES[t].name; kind.appendChild(o); }
+    if (types.includes(keep)) kind.value = keep;
+    $('eventText').textContent = kind.value ? SIMPEVENTS.TYPES[kind.value].text : '';
+    (cs ? cs.events : []).forEach((ev, i) => { const o = document.createElement('option'); o.value = i; o.textContent = `${SIMPEVENTS.TYPES[ev.type].name} · X ${ev.x}`; list.appendChild(o); });
+    list.value = eventSel; $('eventX').value = eventSel >= 0 && cs ? cs.events[eventSel].x : '';
+    for (const id of ['eventX', 'eventMove', 'eventDelete']) $(id).disabled = eventSel < 0;
+  }
+  function commitEvents(before, label, select) {
+    const cs = custom(); if (JSON.stringify(before) === JSON.stringify(cs.events)) return;
+    const moved = cs.events[select]; cs.events.sort((a, b) => a.x - b.x); eventSel = moved ? cs.events.indexOf(moved) : -1;
+    undo.push({ events: st.custom, before, after: clone(cs.events), label }); if (undo.length > 500) undo.shift(); redo = [];
+    saveSoon(); syncUi(); syncEvents(); drawAll(); msg(`${label}. Saved in ${cs.name}.`);
+  }
+  function eventDown(e) {
+    const cs = custom(); if (!cs || e.button !== 0 && e.button !== 2) return;
+    const p = enemyPoint(e); let found = -1, best = 10;
+    cs.events.forEach((ev, i) => { const d = Math.abs(ev.x - p.x); if (d < best) { best = d; found = i; } });
+    if (found >= 0) {
+      eventSel = found; if (e.button === 2) { deleteEvent(); return; }
+      eventDrag = { before: clone(cs.events) }; map.setPointerCapture(e.pointerId); syncEvents(); drawAll(); return;
+    }
+    if (e.button !== 0 || !$('eventType').value) return;
+    if (cs.events.length >= 24) { msg('A stage can have up to 24 scripted events.'); return; }
+    const before = clone(cs.events); cs.events.push({ type: $('eventType').value, x: p.x });
+    commitEvents(before, 'Add ' + SIMPEVENTS.TYPES[$('eventType').value].name, cs.events.length - 1);
+  }
+  function deleteEvent() {
+    const cs = custom(); if (!cs || eventSel < 0) return;
+    const before = clone(cs.events), name = SIMPEVENTS.TYPES[cs.events[eventSel].type].name; cs.events.splice(eventSel, 1); eventSel = -1; commitEvents(before, 'Delete ' + name, -1);
+  }
+  $('eventType').onchange = () => syncEvents();
+  $('eventList').onchange = e => { eventSel = +e.target.value; syncEvents(); drawAll(); const x = custom().events[eventSel].x; $('mapwrap').scrollLeft = Math.max(0, x * st.zoom - $('mapwrap').clientWidth / 2); };
+  $('eventDelete').onclick = deleteEvent;
+  $('eventMove').onclick = () => {
+    const cs = custom(), x = Math.round(Number($('eventX').value)); if (!cs || eventSel < 0 || !Number.isFinite(x)) return;
+    const before = clone(cs.events); cs.events[eventSel].x = Math.max(0, Math.min(map.width - 1, x)); commitEvents(before, 'Move ' + SIMPEVENTS.TYPES[cs.events[eventSel].type].name, eventSel);
+  };
+
   function setMode(value) {
     saveNpcDetails(); end(); mode = value; enemySelected=-1;
-    $('toolBlocks').classList.toggle('on', mode === 'blocks'); $('toolEnemies').classList.toggle('on', mode === 'enemies'); $('toolNpcs').classList.toggle('on',mode==='npcs');
+    $('toolBlocks').classList.toggle('on', mode === 'blocks'); $('toolEnemies').classList.toggle('on', mode === 'enemies'); $('toolNpcs').classList.toggle('on',mode==='npcs'); $('toolEvents').classList.toggle('on', mode === 'events');
     const native=$('enemyKind').querySelector('option[value="grunt"]'); native.disabled=mode==='npcs'; $('enemyKind').querySelectorAll('#nativeKinds option').forEach(o=>{o.disabled=mode==='npcs';}); if(mode==='npcs'&&($('enemyKind').value==='grunt'||$('enemyKind').value.startsWith('native:')))$('enemyKind').value='rivet'; showEnemyPreview();
     for (const el of [$('sel'), $('pickwrap'), document.querySelector('#side h2')]) el.style.display = mode !== 'blocks' ? 'none' : '';
-    $('enemyPanel').hidden = mode === 'blocks'; drawAll(); syncEnemies();
+    $('enemyPanel').hidden = mode === 'blocks' || mode === 'events'; $('eventPanel').hidden = mode !== 'events'; eventSel = -1; drawAll(); syncEnemies(); syncEvents();
     $('entityHint').textContent=mode==='npcs'?'NPCs are friendly, cannot be attacked, and never count toward wave completion. Press E nearby to talk.':'Custom enemies use the standard enemy’s AI, attacks and collisions.';
-    msg(mode === 'npcs' ? 'Click empty map space to add a friendly NPC. Select it to edit its name and dialogue.' : mode==='enemies'?'Click empty map space to add an enemy. Drag a marker to move it.':'Pick a block, then paint on the map.');
+    msg(mode === 'events' ? 'Click the map to place the chosen event at that X. Drag a marker to move it; right-click deletes.' : mode === 'npcs' ? 'Click empty map space to add a friendly NPC. Select it to edit its name and dialogue.' : mode==='enemies'?'Click empty map space to add an enemy. Drag a marker to move it.':'Pick a block, then paint on the map.');
   }
   $('toolBlocks').onclick = () => setMode('blocks'); $('toolEnemies').onclick = () => setMode('enemies');
-  $('toolNpcs').onclick = () => setMode('npcs');
+  $('toolNpcs').onclick = () => setMode('npcs'); $('toolEvents').onclick = () => setMode('events');
   $('showScripts').onchange = () => { enemySelected = -1; syncEnemies(); drawAll(); };
 
   // ---------- toolbar
   function setLayer(l) { if (!sec.layers[l] || l === st.layer) return; st.layer = l; if (st.sel >= nBlk[l]) st.sel = 0; drawAll(); drawPicker(); drawSel(); syncUi(); savePrefs(); }
   const toggle = k => { st[k] = !st[k]; drawAll(); syncUi(); savePrefs(); };
   function zoom() { st.zoom = st.zoom === 2 ? 1 : 2; applyZoom(); syncUi(); savePrefs(); }
-  $('scene').onchange = e => { st.scene = +e.target.value; st.area = 0; loadSection(); };
+  $('scene').onchange = e => {
+    const v = e.target.value;
+    if (v === 'new') { openNewStage(); return; }
+    if (v.startsWith('c:')) { const cs = stages[v.slice(2)]; if (!cs) return; st.custom = v.slice(2); st.scene = SIMPCUSTOM.sceneIndex(cs.scene); const set = cs.tileset && SIMPTILES.sets[cs.tileset.id]; st.area = set ? set.area : 0; }
+    else { st.custom = null; st.scene = +v; st.area = 0; }
+    undo = []; redo = []; loadSection();
+  };
   $('area').onchange = e => { st.area = +e.target.value; loadSection(); };
   $('l0').onclick = () => setLayer(0); $('l1').onclick = () => setLayer(1);
   $('vOther').onclick = () => toggle('other'); $('vGrid').onclick = () => toggle('grid'); $('vEdits').onclick = () => toggle('edits'); $('vZoom').onclick = zoom;
   $('undo').onclick = () => step(undo, redo, 'before'); $('redo').onclick = () => step(redo, undo, 'after');
   $('revert').onclick = () => {
+    if (custom()) { // custom art: back to the set's default layout; the original ground is never painted from here
+      if (!tset) { msg('This section is the original ground and has no edits in this stage.'); return; }
+      const ch = new Map(), def = tset.layers[st.layer].map;
+      tmaps[st.layer].forEach((id, i) => { if (id !== def[i]) { const key = tileKey(st.layer, i); ch.set(key, { before: id, after: def[i] }); setTile(key, def[i]); } });
+      commit(ch, `revert ${st.layer ? 'front' : 'back'} layer`); msg(ch.size ? `Reverted ${ch.size} block${ch.size === 1 ? '' : 's'}.` : 'Nothing to revert in this layer.'); return;
+    }
     const L = sec.layers[st.layer], ch = new Map();
     for (const s of L.map.screens) for (let i = 0; i < L.map.rows * 8; i++) {
       const off = s + 2 * i; if (!edited(off) || ch.has(off)) continue;
@@ -443,28 +568,28 @@
     commit(ch, `revert ${L.name.toLowerCase()} layer`); msg(ch.size ? `Reverted ${ch.size} block${ch.size === 1 ? '' : 's'}.` : 'Nothing to revert in this layer.');
   };
   $('reset').onclick = () => {
-    const n = Object.keys(bytes).length, en = Object.keys(enemyEdits).length; if (!n && !en && !Object.keys(tilesets).length) { msg('There are no edits.'); return; }
-    if (!confirm(`Clear every stage edit (${n} changed bytes, ${en} enemy stages)? This cannot be undone.`)) return;
-    work.set(orig); bytes = {}; enemyEdits = {}; tilesets = {}; undo = []; redo = []; saveNow(); scanMetaMax(); loadSection(); msg('All edits cleared.');
+    const n = Object.keys(bytes).length, en = Object.keys(enemyEdits).length, cn = Object.keys(stages).length; if (!n && !en && !cn) { msg('There are no edits.'); return; }
+    if (!confirm(`Clear every stage edit (${n} changed bytes, ${en} enemy stages, ${cn} custom stages)? This cannot be undone.`)) return;
+    work.set(orig); bytes = {}; enemyEdits = {}; stages = {}; st.custom = null; undo = []; redo = []; saveNow(); scanMetaMax(); loadSection(); msg('All edits cleared.');
   };
   $('exp').onclick = () => {
     saveNow();
-    const blob = new Blob([JSON.stringify({ format: 'simpsons-stage-edits', v: 1, bytes, enemies: enemyEdits, tilesets }, null, 1)], { type: 'application/json' });
+    const blob = new Blob([JSON.stringify({ format: 'simpsons-stage-edits', v: 1, bytes, enemies: enemyEdits, stages }, null, 1)], { type: 'application/json' });
     const a = document.createElement('a'); a.href = URL.createObjectURL(blob); a.download = 'simpsons-stage-edits.json'; a.click(); setTimeout(() => URL.revokeObjectURL(a.href), 1000);
   };
   $('imp').onclick = () => $('impf').click();
   $('impf').onchange = async e => {
     const f = e.target.files[0]; e.target.value = ''; if (!f) return;
     try {
-      const j = JSON.parse(await f.text()); if (j && j.bytes) SIMPTILES.migrate(j, orig); if (!j || j.format !== 'simpsons-stage-edits' || j.v !== 1 || !j.bytes || typeof j.bytes !== 'object' || Array.isArray(j.bytes)) throw new Error('not a supported stage edits file');
+      const j = JSON.parse(await f.text()); if (j && j.bytes) { SIMPTILES.migrate(j, orig); SIMPCUSTOM.migrate(j); } if (!j || j.format !== 'simpsons-stage-edits' || j.v !== 1 || !j.bytes || typeof j.bytes !== 'object' || Array.isArray(j.bytes)) throw new Error('not a supported stage edits file');
       const r = S.applyPatch(orig, j.bytes);
       if (r.n !== Object.keys(j.bytes).length) throw new Error('invalid ROM offsets or byte values');
-      const importedEnemies = E.validate(j.enemies || {}), importedTilesets = SIMPTILES.validate(j.tilesets || {});
-      work.set(r.prog); bytes = S.diff(orig, work); enemyEdits = importedEnemies; tilesets = importedTilesets; undo = []; redo = [];
+      const importedEnemies = E.validate(j.enemies || {}), importedStages = SIMPCUSTOM.validate(j.stages || {});
+      work.set(r.prog); bytes = S.diff(orig, work); enemyEdits = importedEnemies; stages = importedStages; if (!custom()) st.custom = null; undo = []; redo = [];
       saveNow(); scanMetaMax(); loadSection(); msg(`Imported ${r.n} bytes.`);
     } catch (err) { msg('Import failed: ' + err.message); }
   };
-  $('play').onclick = () => { saveNpcDetails(); saveNow(); window.open('index.html?scene=' + S.SCENES[st.scene].scene + '&play=1', '_blank'); };
+  $('play').onclick = () => { saveNpcDetails(); saveNow(); window.open(custom() ? 'index.html?custom=' + st.custom + '&play=1' : 'index.html?scene=' + S.SCENES[st.scene].scene + '&play=1', '_blank'); };
   addEventListener('keydown', e => {
     if (!sec) return;
     if (e.target.tagName === 'SELECT' || e.target.tagName === 'INPUT' || e.target.tagName === 'TEXTAREA') return;
@@ -472,6 +597,7 @@
     if ((e.ctrlKey || e.metaKey) && k === 'z') { e.preventDefault(); e.shiftKey ? $('redo').click() : $('undo').click(); return; }
     if ((e.ctrlKey || e.metaKey) && k === 'y') { e.preventDefault(); $('redo').click(); return; }
     if (e.ctrlKey || e.metaKey || e.altKey) return;
+    if (mode === 'events' && (k === 'delete' || k === 'backspace')) { e.preventDefault(); deleteEvent(); return; }
     if (mode !== 'blocks' && (k === 'delete' || k === 'backspace')) { e.preventDefault(); deleteEnemy(); return; }
     if (k === '1') setLayer(0); else if (k === '2') setLayer(1);
     else if (k === 'g') toggle('grid'); else if (k === 'o') toggle('other'); else if (k === 'e') toggle('edits'); else if (k === 'z') zoom();
@@ -486,15 +612,18 @@
     try {
       const files = await SSRROM.ensure(); romFiles = files;
       orig = files['prog.bin']; await SIMPTILES.ready;
-      let doc = {}; try { doc = JSON.parse(localStorage.getItem(S.PATCH_KEY) || '{}') || {}; SIMPTILES.migrate(doc, orig); } catch (e) { doc = {}; }
+      let doc = {}, migrated = false; try { doc = JSON.parse(localStorage.getItem(S.PATCH_KEY) || '{}') || {}; SIMPTILES.migrate(doc, orig); migrated = !!doc.tilesets && Object.keys(doc.tilesets).length > 0; SIMPCUSTOM.migrate(doc); } catch (e) { doc = {}; }
       bytes = doc.bytes && typeof doc.bytes === 'object' && !Array.isArray(doc.bytes) ? doc.bytes : {}; work = S.applyPatch(orig, bytes).prog; bytes = S.diff(orig, work);
-      try { enemyEdits = E.validate(doc.enemies || {}); tilesets = SIMPTILES.validate(doc.tilesets || {}); } catch (e) { enemyEdits = {}; tilesets = {}; }
+      try { enemyEdits = E.validate(doc.enemies || {}); } catch (e) { enemyEdits = {}; }
+      stages = SIMPCUSTOM.validate(doc.stages || {});
       D = S.open(work); tiles = S.decodeTiles(files['gfx_tiles.bin']);
-      const sel = $('scene'); S.SCENES.forEach((sc, i) => { const o = document.createElement('option'); o.value = i; o.textContent = sc.name; sel.appendChild(o); });
       loadPrefs(); if (!(st.scene >= 0 && st.scene < S.SCENES.length)) st.scene = 0;
+      if (st.custom && !stages[st.custom]) st.custom = null;
+      if (custom()) st.scene = SIMPCUSTOM.sceneIndex(custom().scene);
+      if (migrated) { saveNow(); msg('Your custom level art is now a custom stage; the original stages show their own art again.'); }
       if (!(st.area >= 0 && st.area < D.sectionCount(S.SCENES[st.scene].st))) st.area = 0;
       scanMetaMax(); controls.forEach(c => { c.disabled = false; }); loadSection();
-      const n = Object.keys(bytes).length; msg(n ? `${n} edited bytes loaded from this browser.` : 'Pick a block on the right, then paint on the map.');
+      const n = Object.keys(bytes).length; if (!migrated) msg(n ? `${n} edited bytes loaded from this browser.` : 'Pick a block on the right, then paint on the map, or choose “+ New stage…” to build a new level.');
     } catch (e) { console.error(e); msg('Could not start: ' + e.message); }
   })();
 })();

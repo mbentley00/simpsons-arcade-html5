@@ -99,7 +99,9 @@
       const i = ((oy + y) * stride + ox + x) * 4; out[i] = set.palette[3 * p]; out[i + 1] = set.palette[3 * p + 1]; out[i + 2] = set.palette[3 * p + 2]; out[i + 3] = 255;
     }
   }
-  function forScene(scene) { return Object.values(sets()).find(s => s.scene === scene) || null; }
-  const api = { ready, install, drawBlock, forScene, validate, migrate, defaults, get sets() { return sets(); }, BASE, SHADE };
+  // several art sets can use the same original stage's ground
+  function forSceneAll(scene) { return Object.values(sets()).filter(s => s.scene === scene); }
+  function forScene(scene) { return forSceneAll(scene)[0] || null; }
+  const api = { ready, install, drawBlock, forScene, forSceneAll, validate, migrate, defaults, get sets() { return sets(); }, BASE, SHADE };
   if (typeof module !== 'undefined' && module.exports) module.exports = api; else G.SIMPTILES = api;
 })(typeof window !== 'undefined' ? window : globalThis);

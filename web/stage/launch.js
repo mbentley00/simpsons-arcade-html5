@@ -2,7 +2,7 @@
 // privately in this browser. No checkpoints or ROM data are shipped in the code package.
 (function (G) {
   'use strict';
-  const q = new URLSearchParams(location.search), enabled = q.get('play') === '1' && G.SIMPMODS && SIMPMODS.scene !== null;
+  const q = new URLSearchParams(location.search), enabled = () => q.get('play') === '1' && !!G.SIMPMODS && SIMPMODS.scene !== null; // ?custom resolves its scene in SIMPMODS.apply
   const nativeScene = { 5: 6, 10: 11, 14: 15 };
   function playable(m, target) {
     const r = m.ram, scene = nativeScene[target.scene] || target.scene;
@@ -34,17 +34,17 @@
     });
   }
   async function prepare(m) {
-    if (!enabled) return false;
+    if (!enabled()) return false;
     const target = SIMPSTAGE.SCENES.find(s => s.scene === SIMPMODS.scene);
     if (!target) return false;
     const overlay = document.createElement('div'); overlay.id = 'stage-launch'; overlay.setAttribute('role', 'status');
     overlay.style.cssText = 'position:fixed;inset:0;z-index:100;display:grid;place-content:center;text-align:center;background:#17120d;color:#ffc861;font:18px system-ui;padding:24px';
-    const title = document.createElement('strong'); const ts = SIMPMODS.tilesets && SIMPMODS.tilesets[target.scene]; title.textContent = 'Starting ' + (ts && G.SIMPTILES ? SIMPTILES.sets[ts.id].name : target.name);
+    const title = document.createElement('strong'); title.textContent = 'Starting ' + (SIMPMODS.custom ? SIMPMODS.custom.name : target.name);
     const detail = document.createElement('p'); detail.textContent = 'Preparing gameplay. Introductions will be skipped.';
     overlay.append(title, detail); document.body.appendChild(overlay);
     let patch = ''; try { patch = localStorage.getItem(SIMPSTAGE.PATCH_KEY) || ''; } catch (e) { /* optional storage */ }
     const art = Object.entries(G.SIMPENEMY_ASSETS || {}).sort().map(([id, a]) => [id, hash(a.tiles + JSON.stringify([a.palette, a.displayScale]))]);
-    const signature = JSON.stringify({ version: 6, art, scene: target.scene, build: G.SIMP_BUILD || '', patch, eeprom: Array.from(m.eep.data) });
+    const signature = JSON.stringify({ version: 7, art, scene: target.scene, custom: SIMPMODS.custom ? SIMPMODS.custom.id : '', build: G.SIMP_BUILD || '', patch, eeprom: Array.from(m.eep.data) });
     const key = target.scene + '/' + hash(signature), cached = q.get('fresh') === '1' ? null : await cache(key);
     if (cached && cached.signature === signature) {
       SIMPMODS.restore(m); m.load(cached.state); m.drainAudio();
@@ -78,5 +78,5 @@
       throw e;
     } finally { m.onFrame = oldFrame; m.inputs.COIN = m.inputs.P1 = 255; }
   }
-  G.SIMPLAUNCH = { enabled, prepare, playable };
+  G.SIMPLAUNCH = { get enabled() { return enabled(); }, prepare, playable };
 })(window);

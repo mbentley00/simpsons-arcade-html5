@@ -34,7 +34,11 @@ console.log(`OK: native hit combo ${best}, launcher peak ${maxZ}px over ${airFra
   const hp=r[foe+0x1b],px=word(0xa4c),dir=word(foe+12)>px?1:-1;s.players[0].dir=dir;s.players[0].throwReady=0;b.inputs.P1=255;
   C.request('throw');C.beforeFrame(b);const ball=s.balls[s.balls.length-1];assert(ball,'ball thrown');
   ball.z=word(foe+17);ball.x=word(foe+12)+word(0x8ac)-dir*30;   // line the ball up with the enemy's depth band
-  let hit=-1;for(let f=0;f<40&&hit<0;f++){C.beforeFrame(b);b.runFrames(1);C.afterFrame(b);if(ball.hit.includes(foe))hit=f;}
-  assert(hit>=0,'the ball must reach the enemy');assert(r[foe+0x1b]<hp||!(r[foe]&0x40),'the ball damages the native enemy');
-  console.log(`OK: native bowling ball hit enemy 0x${foe.toString(16)} after ${hit+1} frames (health ${hp} -> ${r[foe+0x1b]})`);
+  r[foe+0x1b]=Math.max(r[foe+0x1b],20);const full=r[foe+0x1b];
+  let hit=-1;for(let f=0;f<40&&hit<0;f++){C.beforeFrame(b);if(ball.hit.includes(foe))hit=f;b.runFrames(1);C.afterFrame(b);}
+  assert(hit>=0,'the ball must reach the enemy');assert(r[foe+0x1b]<full,'the ball damages the native enemy');
+  // the game's own hit handler reacts (state 4 = hit reaction); hit kind 3 used to be ignored, so enemies never flinched
+  let reacted=false;for(let f=0;f<6;f++){if(r[foe+2]===4)reacted=true;C.beforeFrame(b);b.runFrames(1);C.afterFrame(b);}
+  assert(reacted,'the ball knocks the enemy down');
+  console.log(`OK: native bowling ball hit enemy 0x${foe.toString(16)} after ${hit+1} frames (health ${full} -> ${r[foe+0x1b]}, knocked down)`);
 }

@@ -20,7 +20,7 @@ try:
         editor.on('pageerror',lambda e:errors.append(str(e)))
         editor.goto(f'http://127.0.0.1:{server.server_port}/editor.html')
         editor.locator('#romload input[type=file]').set_input_files(os.path.join(ROOT,'roms/simpsons.zip'))
-        editor.wait_for_function('document.getElementById("scene").options.length === 12')
+        editor.wait_for_function('document.getElementById("scene").options.length >= 12')
         editor.select_option('#scene',label='Stage 5 - gorge'); editor.click('#toolEnemies')
         assert editor.evaluate('SIMPENEMY.display(SIMPDUFFMAN)') == {'width':48,'height':72,'anchor':[24,68]}
         box = editor.locator('#map').bounding_box(); zoom = editor.evaluate('document.getElementById("map").getBoundingClientRect().width / document.getElementById("map").width')

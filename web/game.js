@@ -29,8 +29,9 @@
   function blit(rgb) { for (let i = 0; i < W * H; i++) { const c = rgb[i]; base[i] = 0xff000000 | ((c & 0xff) << 16) | (c & 0xff00) | ((c >> 16) & 0xff); } }
   function draw() {
     if (G.SSRCHAT && m) SSRCHAT.draw(m);
-    if (G.SIMPCOMBAT && SIMPCOMBAT.drawOverlay && m && !net) {
-      px32.set(base); const d = SIMPCOMBAT.drawOverlay(px32);
+    if ((G.SIMPCOMBAT || G.SIMPEVENTS) && m && !net) {
+      // stage events (giant ball, pins, banners) are drawn under the Remix HUD and draft
+      px32.set(base); let d = G.SIMPEVENTS ? SIMPEVENTS.drawOverlay(px32) : false; if (G.SIMPCOMBAT && SIMPCOMBAT.drawOverlay(px32)) d = true;
       if (!fresh && !d && !overlaid) return; overlaid = d;
     } else { if (!fresh) return; px32.set(base); }
     fresh = false; ctx.putImageData(img, 0, 0); if (G.SSRGFX) SSRGFX.present(img);
@@ -42,6 +43,7 @@
     for(let i=0;i<n;i++) {
       if(G.SIMPI) SIMPI.apply(m);
       if(G.SIMPCOMBAT) SIMPCOMBAT.beforeFrame(m);
+      if(G.SIMPEVENTS) SIMPEVENTS.beforeFrame(m);
       if(G.SIMPNPC) SIMPNPC.beforeFrame(m);
       if(G.SIMPNPC&&SIMPNPC.blocked) break;
       m.runFrames(1);

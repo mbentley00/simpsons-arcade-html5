@@ -20,7 +20,7 @@ try:
         ed.goto(f'http://127.0.0.1:{server.server_port}/editor.html')
         ed.evaluate('localStorage.clear()'); ed.reload()
         ed.locator('#romload input[type=file]').set_input_files(os.path.join(ROOT, 'roms/simpsons.zip'))
-        ed.wait_for_function('document.getElementById("scene").options.length === 12')
+        ed.wait_for_function('document.getElementById("scene").options.length >= 12')
         ed.select_option('#scene', label='Stage 2 - amusement park'); ed.click('#toolEnemies')
         names = ed.evaluate('[...document.querySelectorAll("#enemyList option")].map(o => o.textContent)')
         assert any(n.startswith('Dog') for n in names), names

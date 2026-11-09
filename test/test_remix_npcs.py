@@ -11,7 +11,7 @@ try:
         browser=p.chromium.launch();ctx=browser.new_context(viewport={'width':1400,'height':1000});editor=ctx.new_page();errors=[]
         editor.on('pageerror',lambda e:errors.append(str(e)))
         editor.goto(f'http://127.0.0.1:{server.server_port}/editor.html');editor.locator('#romload input[type=file]').set_input_files(os.path.join(ROOT,'roms/simpsons.zip'))
-        editor.wait_for_function('document.getElementById("scene").options.length===12')
+        editor.wait_for_function('document.getElementById("scene").options.length>=12')
         editor.select_option('#scene',label='Stage 5 - gorge');editor.click('#toolNpcs');editor.select_option('#enemyKind','slugger')
         box=editor.locator('#map').bounding_box();zoom=editor.evaluate('document.getElementById("map").getBoundingClientRect().width/document.getElementById("map").width')
         editor.mouse.click(box['x']+220*zoom,box['y']+192*zoom)
@@ -21,7 +21,7 @@ try:
         npc=next(r for r in saved['enemies']['6'] if r.get('role')=='npc');assert npc['skin']=='slugger' and npc['npcName']=='Coach'
         with editor.expect_download() as download:editor.click('#exp')
         assert json.load(open(download.value.path()))['enemies']['6'][-1]['dialogue']==npc['dialogue']
-        editor.reload();editor.wait_for_function('document.getElementById("scene").options.length===12');editor.click('#toolNpcs');assert 'Coach' in editor.locator('#enemyList').inner_text()
+        editor.reload();editor.wait_for_function('document.getElementById("scene").options.length>=12');editor.click('#toolNpcs');assert 'Coach' in editor.locator('#enemyList').inner_text()
         with ctx.expect_page() as pop:editor.click('#play')
         game=pop.value;game.on('pageerror',lambda e:errors.append(str(e)));game.wait_for_url('**/index.html?scene=9&play=1');game.evaluate('SIMPG.ready')
         game.evaluate('SIMPG.pause(true)')

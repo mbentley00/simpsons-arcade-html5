@@ -13,6 +13,8 @@ select,button{font:inherit;color:var(--text);background:#33271b;border:1px solid
 button{cursor:pointer}button:hover:not(:disabled){border-color:var(--acc)}button:disabled{opacity:.4;cursor:default}
 button.on{background:var(--acc);color:#2a1a08;border-color:var(--acc)}
 button.go{background:#2f5d2a;border-color:#4f9446}
+#eventPanel{padding:10px;display:flex;flex-direction:column;gap:8px;min-height:0;flex:1;overflow:auto}#eventPanel[hidden]{display:none}#eventList{width:100%;flex:1;min-height:130px}#eventPanel input{width:80px;background:#17120d;border:1px solid var(--line);color:var(--text);padding:4px}#eventText{color:var(--text)}
+dialog#newStage{background:var(--panel);color:var(--text);border:1px solid var(--acc);border-radius:8px;max-width:440px}dialog#newStage::backdrop{background:rgba(0,0,0,.6)}dialog#newStage h3{margin:0 0 6px;color:var(--acc)}dialog#newStage p{color:var(--dim);margin:0 0 10px}dialog#newStage label{display:flex;gap:8px;align-items:center;margin:8px 0}dialog#newStage input{flex:1;background:#17120d;border:1px solid var(--line);color:var(--text);padding:4px}dialog#newStage .row{display:flex;gap:8px;justify-content:flex-end;margin-top:12px}
 #enemyPanel{padding:10px;display:flex;flex-direction:column;gap:8px;min-height:0;flex:1;overflow:auto}#enemyPanel[hidden]{display:none}
 #enemyList{width:100%;flex:1;min-height:130px}#enemyPanel label{display:flex;gap:6px;align-items:center}#enemyPanel input{width:70px;background:#17120d;border:1px solid var(--line);color:var(--text);padding:4px}
 #enemyPreview{width:96px;height:144px;image-rendering:pixelated;align-self:center;flex-shrink:0}#enemyNote{color:var(--dim);font-size:12px}#npcFields textarea{background:#17120d;color:var(--text);border:1px solid var(--line)}
@@ -35,10 +37,10 @@ button.go{background:#2f5d2a;border-color:#4f9446}
 <body>
 <div id="bar">
   <h1>STAGE EDITOR</h1>
-  <label>Stage <select id="scene"></select></label>
+  <label>Stage <select id="scene"></select></label><button id="stageRename" hidden title="Rename this custom stage">Rename</button><button id="stageDelete" hidden title="Delete this custom stage">Delete stage</button>
   <label>Section <select id="area"></select></label>
-  <label title="Custom level art for this stage slot">Level art <select id="tileset"><option value="">Original</option></select></label>
-  <div class="grp"><button id="toolBlocks" class="on">Background</button><button id="toolEnemies">Enemies</button><button id="toolNpcs">NPCs</button></div>
+  <label title="Background art of a custom stage">Level art <select id="tileset"><option value="">Original</option></select></label>
+  <div class="grp"><button id="toolBlocks" class="on">Background</button><button id="toolEnemies">Enemies</button><button id="toolNpcs">NPCs</button><button id="toolEvents">Events</button></div>
   <div class="grp">Layer <button id="l0">Back</button><button id="l1">Front</button></div>
   <div class="grp"><button id="vOther" title="Show the other layer faded (O)">Other layer</button><button id="vGrid" title="Block grid (G)">Grid</button><button id="vEdits" title="Outline edited blocks (E)">Edits</button><button id="vZoom" title="Zoom (Z)">2&times;</button></div>
   <div class="grp"><button id="undo" title="Ctrl+Z">Undo</button><button id="redo" title="Ctrl+Y">Redo</button><button id="revert" title="Undo every edit in this layer of this section">Revert layer</button></div>
@@ -61,11 +63,25 @@ button.go{background:#2f5d2a;border-color:#4f9446}
     <div id="npcFields" hidden><label>Name <input id="npcName" maxlength="40" style="width:100%"></label><label>Dialogue <textarea id="npcDialogue" maxlength="200" rows="3" style="width:100%"></textarea></label><button id="npcApply">Save NPC details</button></div>
     <small id="entityHint">Custom enemies use the standard enemy's AI, attacks and collisions.</small>
   </div>
+  <div id="eventPanel" hidden>
+    <label>Place <select id="eventType" aria-label="Event type"></select></label>
+    <small id="eventText"></small>
+    <small style="color:var(--dim)">An event fires once, when the camera brings its X to the middle of the screen. Click the map to place one.</small>
+    <select id="eventList" size="8" aria-label="Scripted events in this stage"></select>
+    <div style="display:flex;gap:8px;align-items:center"><label>X <input id="eventX" type="number" min="0" max="8191" step="1"></label><button id="eventMove">Move</button><button id="eventDelete">Delete</button></div>
+  </div>
   <h2>Blocks in this layer's set</h2>
   <div id="pickwrap"><canvas id="pick" width="256" height="32"></canvas></div>
   <div id="help"><kbd>Left drag</kbd> paint &middot; <kbd>Right click</kbd> or <kbd>Alt</kbd>+click pick &middot; <kbd>1</kbd>/<kbd>2</kbd> layer &middot; <kbd>[</kbd> <kbd>]</kbd> block &middot; <kbd>G</kbd> grid &middot; <kbd>Z</kbd> zoom<br>
   Edits are saved in this browser and used by the game page. Blocks are 32&times;32 px groups of 16 tiles from your ROM. Some map data is shared between sections, so an edit can show up in more than one place.</div>
 </div>
+<dialog id="newStage"><form method="dialog">
+  <h3>New stage</h3>
+  <p>A new stage is built on the ground of an original stage (its walkable floor and collision). The original stage is not changed.</p>
+  <label>Name <input id="nsName" maxlength="40" placeholder="Name"></label>
+  <label>Start from <select id="nsTemplate"></select></label>
+  <div class="row"><button id="nsCancel">Cancel</button><button id="nsCreate" class="go">Create</button></div>
+</form></dialog>
 <div id="status"><span id="hover">&nbsp;</span> <span id="msg"></span></div>
-<script src="romload.js"></script><script src="stage/stagedata.js"></script><script src="custom/tileset_school.js"></script><script src="custom/tileset_bowling.js"></script><script src="stage/tileset.js"></script><script src="stage/native_names.js"></script><script src="stage/enemies.js"></script><script src="custom/duffman.js"></script><script src="custom/rivet.js"></script><script src="custom/slugger.js"></script><script src="custom/moleman.js"></script><script src="custom/conehead_carl.js"></script><script src="custom/budget_knight.js"></script><script src="sim/video.js"></script><script src="stage/native_sprites.js"></script><script src="stage/editor.js"></script>
+<script src="romload.js"></script><script src="stage/stagedata.js"></script><script src="custom/tileset_school.js"></script><script src="custom/tileset_bowling.js"></script><script src="custom/tileset_android.js"></script><script src="stage/tileset.js"></script><script src="stage/events.js"></script><script src="stage/native_names.js"></script><script src="stage/enemies.js"></script><script src="stage/stages.js"></script><script src="custom/duffman.js"></script><script src="custom/rivet.js"></script><script src="custom/slugger.js"></script><script src="custom/moleman.js"></script><script src="custom/conehead_carl.js"></script><script src="custom/budget_knight.js"></script><script src="sim/video.js"></script><script src="stage/native_sprites.js"></script><script src="stage/editor.js"></script>
 </body></html>

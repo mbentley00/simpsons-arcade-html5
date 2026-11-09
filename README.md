@@ -103,9 +103,21 @@ The Enemies view also shows the stage's own characters and props (goons, the dog
 
 Select **NPCs** to place a friendly custom character, edit its name and dialogue, and move or delete it with the same tools. NPCs never attack, take damage or count as enemies. A blue name label identifies them in game; approach and press **E** to talk. Dialogue pauses gameplay until closed. NPC data is included in the editor's save, undo/redo and JSON export/import.
 
-**Level art** turns Stage 1 into **Springfield Elementary**, a new level with original background art. It has a schoolyard with a brick school, a school bus and a gym, followed by an indoor hallway with lockers, classrooms and a trophy case. Only the picture changes. Stage 1's map, collision, enemies and script are untouched, so the level plays exactly like the street. The editor's block picker lists the school blocks for painting. The street's interactive props (doors that enemies come out of, breakable fences) are drawn by the game on its fixed layer, so they still appear in their original style. Set Level art back to Original to restore the street.
+**New stages.** Choose **+ New stage…** in the Stage list to build a level of your own. The original stages are never changed by this. A custom stage plays on an original stage's ground (its walkable floor, collision and enemy script) with its own background art, enemy list and scripted events. It appears under **Your stages** in the Stage list; **Play this stage** starts it (`index.html?custom=<id>&play=1`). **Rename** and **Delete stage** manage it. Starting points:
 
-The same **Level art** menu turns Stage 2 into a **Bowling Alley**: twenty lanes with pins, ball returns, score monitors, a pro shop, a snack bar, shoe rental and an arcade corner over a patterned carpet. It replaces the amusement park's main section; the later funhouse sections keep their original art. The park's vendors are characters, not background, so they still appear until you move or delete them in the Enemies view.
+- **Springfield Elementary** (on Stage 1's ground): a schoolyard with a brick school, a school bus and a gym, then an indoor hallway with lockers, classrooms and a trophy case.
+- **The Android's Dungeon** (on Stage 1's ground): a street of red-brick shops leading to the comic book store's green front, with its sign, purple-and-white awning, the cardboard robot in the window and the OPEN door; then the inside of the shop, with shelves of boxed action figures, a comic rack, longboxes and the glass counter with the blue register.
+- **Bowling Alley** (on Stage 2's ground): twenty lanes with pins, ball returns, score monitors, a pro shop, a snack bar, shoe rental and an arcade corner. Only the amusement park's main section gets the new art; the later funhouse sections keep their original look, and the park's vendors (characters, not background) appear until you move or delete them in the Enemies view.
+- **Copy of** any combat stage, with its original art.
+
+The **Level art** menu switches a custom stage's art, and the block picker lists that art's blocks for painting. Sections outside the art (for example the funhouse) show the original ground and cannot be painted from a custom stage. Interactive props drawn on the game's fixed layer (doors that enemies come out of, breakable fences) keep their original style. Edits made before custom stages existed, which put level art on an original stage, are turned into custom stages automatically.
+
+**Events** places scripted events in a custom stage. An event fires once, when the camera brings its X to the middle of the screen. Drag a marker to move it; right-click or Delete removes it. The Bowling Alley has four:
+
+- **Runaway ball**: after a flashing warning on one player's lane, a giant bowling ball rolls across the screen and knocks down everyone it reaches, players and enemies alike. Jump or dodge it.
+- **Pin storm**: pins rain from the pinsetters around the players for about 5 seconds; each lands on its shadow and bonks whoever is under it.
+- **Cosmic bowling**: the lights go out and the alley glows in blacklight neon for 12 seconds.
+- **Ball-return frenzy**: for 10 seconds bowling balls (B / RT) have almost no cooldown.
 
 Use `?mods=0` for online play with the original ROM. The editor's local edits and scene selection are disabled on room invite links; a modified offline game asks you to open a fresh unmodified page before creating or joining a room. See [the format and usage notes](docs/stage-format.md) for limitations and checks.
 
@@ -155,7 +167,8 @@ Simpsons checks that need your zip, and in several cases a MAME log you capture 
 - `test/test_playback_controls.py` — pause/resume, audio muting and persistence, keyboard shortcuts, and the online pause guard.
 - `test/test_enemy_editor.py`, `test/enemy_check.js` — enemy editing and custom sprite rendering; the Node check also needs `unzip` on PATH.
 - `test/test_direct_launch.py`, `test/launch_check.js` — direct editor launch, cached state restoration with custom sprites, and native initialization of every editor scene. The Node check needs `unzip` on PATH.
-- `test/tileset_check.js`, `test/test_school_level.py` — Springfield Elementary and the Bowling Alley: original Stage 1 collision (the player walks the level), the custom art following the camera, legacy migration, and the editor's level art flow.
+- `test/tileset_check.js` — custom level art: the original stage's collision (the player walks the level), the art following the camera, legacy migration.
+- `test/custom_stage_check.js`, `test/test_custom_stages.py` — custom stages: the original stage stays unchanged without `?custom`, New stage / paint / export / play / delete in the editor, migration of old level-art edits, and the Bowling Alley events (runaway ball knockdown, pin storm, cosmic bowling palette and restore) placed in the editor and fired in play.
 - `test/test_native_characters.py` — the editor lists, moves and launches the stage's own characters; scripts stay read-only.
 - `test/combat_unit.js`, `test/combat_native.js`, `test/test_remix_npcs.py` — confirmed hits, native launcher/dodge physics, upgrade drafts/effects/run reset, friendly NPC authoring and dialogue. The native Node check needs `unzip` on PATH.
 

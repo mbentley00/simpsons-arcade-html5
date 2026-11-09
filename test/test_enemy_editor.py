@@ -20,7 +20,7 @@ try:
         page.on('pageerror', lambda e: errors.append(str(e)))
         page.goto(f'http://127.0.0.1:{server.server_port}/editor.html')
         page.locator('#romload input[type=file]').set_input_files(os.path.join(ROOT, 'roms/simpsons.zip'))
-        page.wait_for_function('document.getElementById("scene").options.length === 12')
+        page.wait_for_function('document.getElementById("scene").options.length >= 12')
         page.click('#toolEnemies')
         assert page.locator('#enemyKind').input_value() == 'rivet'
         assert page.locator('#enemyPreview').get_attribute('aria-label') == 'Rivet enemy preview'
@@ -66,7 +66,7 @@ try:
             page.click('#exp')
         exported = json.loads(open(download.value.path(), encoding='utf-8').read())
         assert exported['enemies']['0'][-1]['skin'] == 'duffman'
-        page.reload(); page.wait_for_function('document.getElementById("scene").options.length === 12')
+        page.reload(); page.wait_for_function('document.getElementById("scene").options.length >= 12')
         page.click('#toolEnemies'); assert 'Duffman' in page.locator('#enemyList').inner_text()
         page.locator('#impf').set_input_files({'name': 'edits.json', 'mimeType': 'application/json', 'buffer': json.dumps(exported).encode()})
         page.wait_for_function('document.getElementById("msg").textContent.startsWith("Imported")')
@@ -84,7 +84,7 @@ try:
         assert {r.get('skin') for r in mixed['enemies']['0']} >= {'rivet','duffman'}
         page.locator('#impf').set_input_files({'name':'mixed.json','mimeType':'application/json','buffer':json.dumps(mixed).encode()})
         page.wait_for_function('document.getElementById("msg").textContent.startsWith("Imported")')
-        page.reload(); page.wait_for_function('document.getElementById("scene").options.length === 12'); page.click('#toolEnemies')
+        page.reload(); page.wait_for_function('document.getElementById("scene").options.length >= 12'); page.click('#toolEnemies')
         assert 'Rivet' in page.locator('#enemyList').inner_text() and 'Duffman' in page.locator('#enemyList').inner_text()
         bad = dict(exported); bad['enemies'] = {'0': [{'data': [0, 0]}]}
         page.locator('#impf').set_input_files({'name': 'bad.json', 'mimeType': 'application/json', 'buffer': json.dumps(bad).encode()})

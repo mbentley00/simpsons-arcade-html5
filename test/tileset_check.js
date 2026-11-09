@@ -6,30 +6,30 @@
 const assert = require('assert'), fs = require('fs'), vm = require('vm');
 const { Board } = require('../web/sim/simpsons.js'), { Video } = require('../web/sim/video.js');
 const S = require('../web/stage/stagedata.js'); globalThis.SIMPSTAGE = S;
-require('../web/custom/tileset_school.js'); require('../web/custom/tileset_bowling.js');
+require('../web/custom/tileset_school.js'); require('../web/custom/tileset_bowling.js'); require('../web/custom/tileset_android.js');
 const T = require('../web/stage/tileset.js');
 const files = require('./roms.js')();
 const word = (b, o) => ((b.ram[o] << 8) | b.ram[o + 1]) << 16 >> 16;
 (async () => {
   await T.ready;
   // saved-format validation and migration of the old "carrier" format (which repainted the ROM maps)
-  const school = T.sets.school, bowling = T.sets.bowling;
+  const school = T.sets.school, bowling = T.sets.bowling, android = T.sets.android;
   const v = T.validate({ 2: { id: 'school', maps: T.defaults(school) }, 4: 'bowling', 9: 'school', 2.5: 'x' });
   assert.deepEqual(Object.keys(v), ['2', '4']); assert.equal(v[2].maps[1].length, 448); assert.equal(v[4].maps[0].length, 72 * 8);
   assert.equal(T.validate({ 2: { id: 'school', maps: [[1], [2]] } })[2].maps[0].length, 448, 'bad maps fall back to the default layout');
-  assert.equal(T.forScene(2), school); assert.equal(T.forScene(4), bowling); assert.equal(T.forScene(5), null);
+  assert.equal(T.forScene(2), school); assert.deepEqual(T.forSceneAll(2), [school, android]); assert.equal(T.forScene(4), bowling); assert.equal(T.forScene(5), null);
   const D = S.open(files['prog.bin']), L0 = D.section(0x82, 0).layers[0], legacyOff = L0.map.screens[0] + 3;
   const legacy = T.migrate({ bytes: { [legacyOff]: 7, 12: 34 }, tilesets: { 2: 'school' } }, files['prog.bin']);
   assert.deepEqual(legacy.bytes, { 12: 34 }, 'legacy Stage 1 map bytes are dropped'); assert.deepEqual(legacy.tilesets, { 2: { id: 'school' } });
   // each set's slot must match its stage's main section size
-  for (const set of [school, bowling]) {
+  for (const set of [school, bowling, android]) {
     assert(set.palette.length / 3 <= 256);
     for (const L of D.section(set.st, set.area).layers) { assert.equal(L.map.screens.length * 8, set.cols, set.id + ' columns'); assert.equal(L.map.rows, set.rows); }
   }
   const seed = new Board(files); seed.audio = true;
   while (seed.frame < 1040) { seed.inputs.COIN = seed.frame % 60 < 8 ? 0xfe : 0xff; seed.inputs.P1 = seed.ram[0x800] === 2 && seed.ram[0x803] === 1 ? (seed.frame % 16 < 8 ? 0x6f : 0xff) : (seed.frame % 30 < 8 ? 0x7f : 0xff); seed.runFrames(1); seed.drainAudio(); }
   const checkpoint = seed.save();
-  for (const set of [school, bowling]) {
+  for (const set of [school, bowling, android]) {
     const b = new Board(files); b.audio = true; b.load(checkpoint);
     const element = () => ({ style: {}, setAttribute() {}, append() {}, appendChild() {}, remove() {} });
     const g = { SIMPSTAGE: S, URLSearchParams, location: { search: `?scene=${set.scene}&play=1` }, localStorage: { getItem() { return null; } }, document: { createElement: element, body: { appendChild() {} } }, setTimeout: fn => { fn(); } };
@@ -57,5 +57,5 @@ const word = (b, o) => ((b.ram[o] << 8) | b.ram[o + 1]) << 16 >> 16;
     assert(tot > 500 && ok > tot * 0.97, `${set.id}: custom art follows the camera (${ok}/${tot})`);
     console.log(`ok ${set.name}: original stage collision, camera scrolled to ${cam}, ${custom} custom pixels`);
   }
-  console.log('OK: both custom levels; legacy edits migrated');
+  console.log('OK: all custom levels; legacy edits migrated');
 })().catch(e => { console.error(e); process.exitCode = 1; });
