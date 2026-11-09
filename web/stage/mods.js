@@ -22,15 +22,16 @@
   }
   function apply(files) { // called before the board exists: only remember the edits
     if (off || !G.SIMPSTAGE) return files;
-    const doc = saved(); if (doc && Object.keys(doc.bytes).length) pending = doc.bytes;
+    const doc = saved(); if (doc && G.SIMPTILES) SIMPTILES.migrate(doc, files['prog.bin']);
+    if (doc && Object.keys(doc.bytes).length) pending = doc.bytes;
     if (doc && doc.tilesets && G.SIMPTILES) tilesets = SIMPTILES.validate(doc.tilesets);
     if (doc && doc.enemies && G.SIMPENEMY) try { enemies = SIMPENEMY.validate(doc.enemies); } catch (e) { console.warn('Ignoring invalid enemy edits:', e.message); }
     return files;
   }
   function install(m, video) {
     if (!off && G.SIMPENEMY) SIMPENEMY.install(m, video, enemies, G.SIMPENEMY_ASSETS || G.SIMPDUFFMAN);
-    // custom level art; carriers come from the original ROM, which is still loaded at this point
-    if (!off && G.SIMPTILES && video) for (const id of Object.values(tilesets)) SIMPTILES.install(m, video, SIMPTILES.sets[id]);
+    // custom level art: replaces the picture of a stage slot; its ROM maps and collision are unchanged
+    if (!off && G.SIMPTILES && video) for (const t of Object.values(tilesets)) SIMPTILES.install(m, video, SIMPTILES.sets[t.id], t.maps);
     if (!pending && !warp) return;
     const mw0 = m.mw;
     m.mw = function (a, v) {

@@ -7,6 +7,9 @@
   const W = 320, H = 224, q = new URLSearchParams(location.search), PAUSE = q.get('pause') === '1';
   const cv = document.getElementById('screen'), ctx = cv.getContext('2d'), img = ctx.createImageData(W, H);
   const px32 = new Uint32Array(img.data.buffer);
+  // base: the clean game frame. px32 = base plus the Arcade Remix overlay (web/combat.js), redrawn every display frame
+  // so the in-game HUD, callouts and draft animate even while the board is held. Hashes/pixels() read the clean frame.
+  const base = new Uint32Array(W * H); let overlaid = false;
   let paused = false, shown = -1, m = null, v = null, STEP = 0, acc = 0, last = 0, fresh = false, stats = { steps: 0, ms: 0 };
   let muted = q.get('mute') === '1';
   if (!q.has('mute')) try { muted = localStorage.getItem('simpsons.audio.muted') === '1'; } catch (e) { /* optional preference */ }
@@ -23,8 +26,15 @@
     try { localStorage.setItem('simpsons.audio.muted', muted ? '1' : '0'); } catch (e) { /* optional preference */ }
     syncAudio(); controlsChanged();
   }
-  function blit(rgb) { for (let i = 0; i < W * H; i++) { const c = rgb[i]; px32[i] = 0xff000000 | ((c & 0xff) << 16) | (c & 0xff00) | ((c >> 16) & 0xff); } }
-  function draw() { if (G.SSRCHAT && m) SSRCHAT.draw(m); if (!fresh) return; fresh = false; ctx.putImageData(img, 0, 0); if (G.SSRGFX) SSRGFX.present(img); }
+  function blit(rgb) { for (let i = 0; i < W * H; i++) { const c = rgb[i]; base[i] = 0xff000000 | ((c & 0xff) << 16) | (c & 0xff00) | ((c >> 16) & 0xff); } }
+  function draw() {
+    if (G.SSRCHAT && m) SSRCHAT.draw(m);
+    if (G.SIMPCOMBAT && SIMPCOMBAT.drawOverlay && m && !net) {
+      px32.set(base); const d = SIMPCOMBAT.drawOverlay(px32);
+      if (!fresh && !d && !overlaid) return; overlaid = d;
+    } else { if (!fresh) return; px32.set(base); }
+    fresh = false; ctx.putImageData(img, 0, 0); if (G.SSRGFX) SSRGFX.present(img);
+  }
   function run(n) {
     if (net && net.active()) return netTick(n);
     if ((G.SIMPCOMBAT && SIMPCOMBAT.blocked) || (G.SIMPNPC && SIMPNPC.blocked)) return;
@@ -78,7 +88,7 @@
     } catch (e) { console.warn('audio unavailable:', e.message); ac = node = gain = null; }
   }
   for (const ev of ['pointerdown', 'keydown', 'gamepadconnected']) addEventListener(ev, () => { audioStart(); if (ac && ac.state === 'suspended') ac.resume(); });
-  function hash() { let h = 0x811c9dc5; const d = px32; for (let i = 0; i < d.length; i++) { h ^= d[i]; h = Math.imul(h, 0x01000193); } return h >>> 0; }
+  function hash() { let h = 0x811c9dc5; const d = base; for (let i = 0; i < d.length; i++) { h ^= d[i]; h = Math.imul(h, 0x01000193); } return h >>> 0; }
   const ready = (async () => {
     const mods = await SIMCJS.load('sim/', ['simpsons.js', 'video.js']);
     G.SIMPM = mods['simpsons.js']; G.SimpsonsVideo = mods['video.js'];
@@ -101,7 +111,7 @@
     if (!PAUSE) requestAnimationFrame(tick);
   })();
   ready.catch(e => console.error(e));
-  G.SIMPG = G.SSRG = { ready, run: n => { run(n); draw(); }, hash, stats, get m() { return m; }, get v() { return v; }, get frame() { return m.frame; }, get shown() { return shown; }, pixels: () => Array.from(px32), keepAudio: false, takeAudio: () => { const a = apcm.splice(0); const r = []; for (const p of a) for (const x of p) r.push(x); return r; }, audioStart, get audio() { return ac; },
+  G.SIMPG = G.SSRG = { ready, run: n => { run(n); draw(); }, hash, stats, get m() { return m; }, get v() { return v; }, get frame() { return m.frame; }, get shown() { return shown; }, pixels: () => Array.from(base), screenPixels: () => Array.from(px32), keepAudio: false, takeAudio: () => { const a = apcm.splice(0); const r = []; for (const p of a) for (const x of p) r.push(x); return r; }, audioStart, get audio() { return ac; },
     get machine() { return m; }, get video() { return v; }, pause: setPaused, get paused() { return paused; }, mute: setMuted, get muted() { return muted; }, get audioGain() { return gain ? gain.gain.value : 0; },
     msPerFrame: () => stats.steps ? stats.ms / stats.steps : 0, netStep, netAudio, netAudioResync, get frameNo() { return frameNo || m.frame; }, set frameNo(x) { frameNo = x; }, get net() { return net; }, set net(x) { net = x; if (x) setPaused(false); else controlsChanged(); } };
 })(window);

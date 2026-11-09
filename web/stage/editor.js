@@ -8,14 +8,15 @@
   let enemyEdits = {}, enemyRows = [], enemySelected = -1, enemyDrag = null, mode = 'blocks';
   const clone = rows => JSON.parse(JSON.stringify(rows));
   const enemyStage = () => E.STAGES[st.scene];
-  const visibleEntity = row => E.enemy(row) && (mode === 'npcs' ? row.role === 'npc' : row.role !== 'npc');
+  const visibleEntity = row => mode === 'npcs' ? row.role === 'npc' && E.enemy(row) : row.role !== 'npc' && (E.kind(row) !== 'script' || $('showScripts').checked);
   const PREFS = 'simpsons.editor.prefs';
   const st = { scene: 0, area: 0, layer: 1, other: true, grid: true, edits: true, zoom: 2, sel: 0 };
   let orig, work, D, tiles, bytes = {}, sec, ram, atlas = [null, null], nBlk = [0, 0], cellIx = new Map(), metaMax = new Map();
   let undo = [], redo = [], stroke = null, saveT = 0;
-  // custom level art (web/stage/tileset.js): tilesets = { scene: id }; in a tiled section the picker lists custom blocks
-  // and painting writes each block's carrier number; native[] keeps the original block atlas for anything else.
-  let tilesets = {}, tset = null, car = null, carIx = [new Map(), new Map()], native = [null, null];
+  // custom level art (web/stage/tileset.js): tilesets = { scene: { id, maps: [back, front] } }. In a tiled section the
+  // picker lists the custom blocks and painting edits the custom maps; the stage's ROM maps (and collision) stay as they are.
+  let tilesets = {}, tset = null, tmaps = null, native = [null, null];
+  const tileKey = (l, i) => 't' + l + ':' + i;
   const map = $('map'), ctx = map.getContext('2d'), pick = $('pick'), pctx = pick.getContext('2d'), selc = $('selc'), sctx = selc.getContext('2d');
   const hex = (n, w) => '0x' + n.toString(16).padStart(w, '0');
   const msg = t => { $('msg').textContent = t || ''; };
@@ -71,9 +72,8 @@
   function loadSection() {
     const sc = S.SCENES[st.scene];
     sec = D.section(sc.st, st.area); ram = D.palette(sc);
-    const tid = tilesets[sc.scene], ts = tid && SIMPTILES.sets[tid];
-    tset = ts && ts.area === st.area ? ts : null; car = tset ? SIMPTILES.carriers(orig, tset) : null;
-    carIx = [new Map(), new Map()]; if (car) car.forEach((list, l) => list.forEach((blk, id) => carIx[l].set(blk, id)));
+    const tv = tilesets[sc.scene], ts = tv && SIMPTILES.sets[tv.id];
+    tset = ts && ts.area === st.area ? ts : null; tmaps = tset ? tv.maps : null;
     enemyRows = enemyStage() < 0 ? [] : clone(enemyEdits[enemyStage()] || E.read(orig, enemyStage())); enemySelected = -1;
     if (!sec.layers[st.layer]) st.layer = sec.layers[0] ? 0 : 1;
     buildAtlas(0); buildAtlas(1);
@@ -91,13 +91,19 @@
   // ---------- drawing
   function drawCell(x, y) {
     const px = x * CELL, py = y * CELL; ctx.clearRect(px, py, CELL, CELL);
-    const order = st.layer === 1 ? [0, 1] : [1, 0]; // the other layer faded underneath, the edited layer on top
+    const order = tset ? [0, 1] : st.layer === 1 ? [0, 1] : [1, 0]; // custom level: game order (its back layer is opaque); native: edited layer on top
     for (const l of order) {
       const L = sec.layers[l]; if (!L || (l !== st.layer && !st.other)) continue;
+      if (tset) {
+        if (x >= tset.cols || y >= tset.rows) continue;
+        const i = y * tset.cols + x, id = tmaps[l][i]; ctx.globalAlpha = l === st.layer ? 1 : l === 1 ? 0.6 : 0.45;
+        ctx.drawImage(atlas[l], (id & 15) * CELL, (id >> 4) * CELL, CELL, CELL, px, py, CELL, CELL); ctx.globalAlpha = 1;
+        if (l === st.layer && st.edits && id !== tset.layers[l].map[i]) { ctx.strokeStyle = '#ff5d8f'; ctx.lineWidth = 2; ctx.strokeRect(px + 1, py + 1, CELL - 2, CELL - 2); }
+        continue;
+      }
       const off = D.cellOff(L, x, y); if (off < 0) continue;
-      const raw = word(off) & 0x3ff, cid = tset ? carIx[l].get(raw) : raw; ctx.globalAlpha = l === st.layer ? 1 : 0.35;
-      if (cid !== undefined && cid < nBlk[l]) ctx.drawImage(atlas[l], (cid & 15) * CELL, (cid >> 4) * CELL, CELL, CELL, px, py, CELL, CELL);
-      else if (tset && native[l] && raw < native[l].height / CELL * 16) ctx.drawImage(native[l], (raw & 15) * CELL, (raw >> 4) * CELL, CELL, CELL, px, py, CELL, CELL);
+      const idx = word(off) & 0x3ff; ctx.globalAlpha = l === st.layer ? 1 : 0.35;
+      if (idx < nBlk[l]) ctx.drawImage(atlas[l], (idx & 15) * CELL, (idx >> 4) * CELL, CELL, CELL, px, py, CELL, CELL);
       else { ctx.fillStyle = '#a00'; ctx.fillRect(px, py, CELL, CELL); }
       ctx.globalAlpha = 1;
       if (l === st.layer && st.edits && edited(off)) { ctx.strokeStyle = '#ff5d8f'; ctx.lineWidth = 2; ctx.strokeRect(px + 1, py + 1, CELL - 2, CELL - 2); }
@@ -118,9 +124,8 @@
   function drawSel() {
     sctx.clearRect(0, 0, CELL, CELL); const L = sec.layers[st.layer]; if (!L) return;
     sctx.drawImage(atlas[st.layer], (st.sel & 15) * CELL, (st.sel >> 4) * CELL, CELL, CELL, 0, 0, CELL, CELL);
-    const blk = tset ? car[st.layer][st.sel] : st.sel;
-    let used = 0; for (const s of L.map.screens) for (let i = 0; i < L.map.rows * 8; i++) if ((word(s + 2 * i) & 0x3ff) === blk) used++;
-    if (tset) { $('selinfo').innerHTML = `<b>${tset.name}</b> block <b>#${st.sel}</b><br>used ${used}&times; in this layer<br><span style="color:var(--dim)">${nBlk[st.layer]} custom blocks; carrier ${hex(blk, 3)}</span>`; return; }
+    if (tset) { const used = tmaps[st.layer].filter(v => v === st.sel).length; $('selinfo').innerHTML = `<b>${tset.name}</b> block <b>#${st.sel}</b><br>used ${used}&times; in this layer<br><span style="color:var(--dim)">${nBlk[st.layer]} custom blocks; collision stays the original stage's</span>`; return; }
+    let used = 0; for (const s of L.map.screens) for (let i = 0; i < L.map.rows * 8; i++) if ((word(s + 2 * i) & 0x3ff) === st.sel) used++;
     const b = D.block(L, st.sel);
     $('selinfo').innerHTML = `Block <b>#${st.sel}</b> (${hex(st.sel, 3)})<br>attribute ${hex(b.attr, 2)}<br>used ${used}&times; in this layer<br><span style="color:var(--dim)">set ${hex(L.meta.rom, 5)}, ${nBlk[st.layer]} blocks</span>`;
   }
@@ -137,23 +142,19 @@
   function fillTilesets() {
     const sel = $('tileset'), sc = S.SCENES[st.scene], set = SIMPTILES.forScene(sc.scene);
     sel.length = 1; if (set) { const o = document.createElement('option'); o.value = set.id; o.textContent = set.name; sel.appendChild(o); }
-    sel.disabled = !set; sel.value = tilesets[sc.scene] || '';
+    sel.disabled = !set; sel.value = tilesets[sc.scene] ? tilesets[sc.scene].id : '';
     sel.title = set ? `Replace ${sc.name} with the ${set.name} level (new background art; the original collision and enemies stay)` : 'No custom level art for this stage yet';
-    [...$('scene').options].forEach((o, i) => { const s2 = S.SCENES[i], id = tilesets[s2.scene]; o.textContent = id ? `${SIMPTILES.sets[id].name} (${s2.name} slot)` : s2.name; });
+    [...$('scene').options].forEach((o, i) => { const s2 = S.SCENES[i], tv = tilesets[s2.scene]; o.textContent = tv ? `${SIMPTILES.sets[tv.id].name} (${s2.name} slot)` : s2.name; });
   }
   function setTileset(id) {
-    const sc = S.SCENES[st.scene], set = SIMPTILES.forScene(sc.scene); if (!set || (tilesets[sc.scene] || '') === id) return;
+    const sc = S.SCENES[st.scene], set = SIMPTILES.forScene(sc.scene); if (!set || (tilesets[sc.scene] ? tilesets[sc.scene].id : '') === id) return;
     if (id) {
-      const p = SIMPTILES.layoutPatch(orig, set);
-      for (const off of SIMPTILES.slotOffsets(orig, set)) work[off] = orig[off];
-      for (const [k, v] of Object.entries(p)) work[+k] = v;
-      tilesets[sc.scene] = id; msg(`${set.name} built in the ${sc.name} slot. Paint with its blocks, then press Play.`);
+      tilesets[sc.scene] = { id, maps: SIMPTILES.defaults(set) }; msg(`${set.name} replaces ${sc.name}. Paint with its blocks, then press Play. Walkable ground and collision stay ${sc.name}'s.`);
     } else {
-      if (!confirm(`Remove ${set.name} and restore the original ${sc.name} maps? Block edits in this stage are lost.`)) { fillTilesets(); return; }
-      for (const off of SIMPTILES.slotOffsets(orig, set)) work[off] = orig[off];
+      if (!confirm(`Remove ${set.name} and show the original ${sc.name} again? Painting done in ${set.name} is lost.`)) { fillTilesets(); return; }
       delete tilesets[sc.scene]; msg(`Restored the original ${sc.name}.`);
     }
-    bytes = S.diff(orig, work); undo = []; redo = []; st.area = set.area; st.sel = 0; saveNow(); scanMetaMax(); loadSection();
+    undo = []; redo = []; st.area = set.area; st.sel = 0; saveNow(); loadSection();
   }
   $('tileset').onchange = e => setTileset(e.target.value);
   function fillAreas() {
@@ -168,10 +169,15 @@
     return { x: Math.floor((e.clientX - r.left) / k), y: Math.floor((e.clientY - r.top) / k) };
   }
   function paint(x, y) {
+    if (tset) {
+      if (x < 0 || y < 0 || x >= tset.cols || y >= tset.rows) return;
+      const i = y * tset.cols + x, before = tmaps[st.layer][i]; if (before === st.sel) return;
+      const key = tileKey(st.layer, i), c = stroke.get(key); if (c) c.after = st.sel; else stroke.set(key, { before, after: st.sel });
+      setTile(key, st.sel); return;
+    }
     const L = sec.layers[st.layer], off = D.cellOff(L, x, y); if (off < 0) return;
-    const blk = tset ? car[st.layer][st.sel] : st.sel;
-    const before = word(off); if ((before & 0x3ff) === blk) return;
-    D.setBlock(L, x, y, blk);
+    const before = word(off); if ((before & 0x3ff) === st.sel) return;
+    D.setBlock(L, x, y, st.sel);
     const c = stroke.get(off); if (c) c.after = word(off); else stroke.set(off, { before, after: word(off) });
     touch(off); redrawOff(off);
   }
@@ -179,6 +185,11 @@
     if (!changes.size) return; undo.push({ changes, label }); if (undo.length > 500) undo.shift(); redo = []; syncUi(); saveSoon();
   }
   function setWord(off, w) { work[off] = w >> 8; work[off + 1] = w & 0xff; touch(off); redrawOff(off); }
+  function setTile(key, id) { // custom level cell: key = tileKey(layer, index)
+    const [l, i] = key.slice(1).split(':').map(Number), sc = S.SCENES[st.scene], tv = tilesets[sc.scene]; if (!tv) return;
+    tv.maps[l][i] = id; saveSoon();
+    if (tset && tv.maps === tmaps) drawCell(i % tset.cols, Math.floor(i / tset.cols));
+  }
   function step(from, to, key) {
     const s = from.pop(); if (!s) return;
     if (s.enemyStage !== undefined) {
@@ -186,12 +197,12 @@
       if (JSON.stringify(enemyEdits[s.enemyStage]) === JSON.stringify(E.read(orig, s.enemyStage))) delete enemyEdits[s.enemyStage];
       if (s.enemyStage === enemyStage()) { enemyRows = clone(s[key]); enemySelected = -1; syncEnemies(); drawAll(); }
       saveSoon();
-    } else for (const [off, c] of s.changes) setWord(off, c[key]);
+    } else for (const [off, c] of s.changes) typeof off === 'string' ? setTile(off, c[key]) : setWord(off, c[key]);
     to.push(s); scanMetaMax(); syncUi(); drawSel(); msg((key === 'before' ? 'Undid ' : 'Redid ') + s.label);
   }
   function pickAt(x, y) {
     const L = sec.layers[st.layer], off = D.cellOff(L, x, y); if (off < 0) return;
-    const raw = word(off) & 0x3ff; st.sel = tset ? (carIx[st.layer].get(raw) ?? 0) : raw; drawPicker(); drawSel(); savePrefs();
+    st.sel = tset ? (tmaps[st.layer][y * tset.cols + x] ?? 0) : word(off) & 0x3ff; drawPicker(); drawSel(); savePrefs();
   }
   function hover(e) {
     const { x, y } = cellAt(e), L = sec.layers[st.layer], off = L ? D.cellOff(L, x, y) : -1;
@@ -243,7 +254,7 @@
     if (asset) { enemyPreview.setAttribute('aria-label', asset.name + ' enemy preview'); c.drawImage(thumbnails[asset.id], 0, 0); }
   }
   $('enemyKind').onchange = showEnemyPreview; showEnemyPreview();
-  const enemyName = row => row.role === 'npc' ? (row.npcName || assets[row.skin]?.name) : assets[row.skin]?.name || 'Enemy #' + row.data[7];
+  const enemyName = row => row.role === 'npc' ? (row.npcName || assets[row.skin]?.name) : assets[row.skin]?.name || E.label(row);
   function drawEnemies() {
     ctx.imageSmoothingEnabled = false;
     enemyRows.forEach((row, i) => {
@@ -251,8 +262,11 @@
       const { x, y } = E.position(row), selected = i === enemySelected;
       const asset = assets[row.skin], size = asset ? E.display(asset) : { width:32, height:56, anchor:[16,52] };
       if (asset) ctx.drawImage(thumbnails[row.skin], x - size.anchor[0], y - size.anchor[1], size.width, size.height);
-      ctx.strokeStyle = selected ? '#fff' : row.role === 'npc' ? '#7ad0ff' : '#ff5d8f'; ctx.fillStyle = selected ? '#ffc861' : '#ff5d8f'; ctx.lineWidth = 2;
-      ctx.beginPath(); ctx.ellipse(x, y, 12, 5, 0, 0, Math.PI * 2); ctx.stroke();
+      const k = E.kind(row), color = row.role === 'npc' ? '#7ad0ff' : k === 'character' ? '#8ef08e' : k === 'script' ? '#9a9a9a' : '#ff5d8f';
+      ctx.strokeStyle = selected ? '#fff' : color; ctx.fillStyle = selected ? '#ffc861' : color; ctx.lineWidth = 2;
+      if (k === 'script') ctx.setLineDash([3, 3]);
+      ctx.beginPath(); ctx.ellipse(x, y, 12, 5, 0, 0, Math.PI * 2); ctx.stroke(); ctx.setLineDash([]);
+      if (!asset && k !== 'script') { ctx.globalAlpha = .55; ctx.fillStyle = color; ctx.fillRect(x - 10, y - 46, 20, 44); ctx.globalAlpha = 1; }
       ctx.fillStyle = 'rgba(0,0,0,.85)'; ctx.fillRect(x - 32, y + 8, 90, 14);
       ctx.fillStyle = selected ? '#ffc861' : '#fff'; ctx.font = '10px system-ui'; ctx.fillText(enemyName(row), x - 29, y + 19);
       if (selected) ctx.strokeRect(x - size.anchor[0] - 1, y - size.anchor[1] - 1, size.width + 2, size.height + 2);
@@ -267,7 +281,8 @@
     });
     list.value = enemySelected;
     const row = enemyRows[enemySelected], selected = row && visibleEntity(row);
-    for (const id of ['enemyX', 'enemyY', 'enemyMove', 'enemyDelete']) $(id).disabled = !selected;
+    for (const id of ['enemyX', 'enemyY', 'enemyMove', 'enemyDelete']) $(id).disabled = !selected || !E.movable(row);
+    $('enemyInfo').textContent = !selected ? '' : E.kind(row) === 'script' ? 'Stage script or trigger (scroll lock, wave or event). Shown for reference; it cannot be moved.' : E.kind(row) === 'character' ? `The stage's own ${E.label(row)} (native art and behaviour). Drag to move it; it appears when the camera reaches its X.` : '';
     $('enemyX').value = selected ? E.position(row).x : ''; $('enemyY').value = selected ? E.position(row).y : '';
     $('npcFields').hidden = mode !== 'npcs';
     for (const id of ['npcName','npcDialogue','npcApply']) $(id).disabled = !selected;
@@ -296,6 +311,7 @@
     });
     if (found >= 0) {
       enemySelected = found;
+      if (!E.movable(enemyRows[found])) { syncEnemies(); drawAll(); return; }
       if (e.button === 2) { deleteEnemy(); return; }
       enemyDrag = clone(enemyRows); map.setPointerCapture(e.pointerId); syncEnemies(); drawAll(); return;
     }
@@ -305,7 +321,7 @@
     commitEnemies(before, 'Add ' + (mode === 'npcs' ? 'NPC ' : '') + enemyName(enemyRows[enemySelected]));
   }
   function deleteEnemy() {
-    if (enemySelected < 0 || !enemyRows[enemySelected]) return;
+    if (enemySelected < 0 || !enemyRows[enemySelected] || !E.movable(enemyRows[enemySelected])) return;
     const before = clone(enemyRows); enemyRows.splice(enemySelected, 1); enemySelected = -1; commitEnemies(before, 'Delete enemy');
   }
   $('enemyList').onchange = e => {
@@ -315,7 +331,7 @@
   $('enemyDelete').onclick = deleteEnemy;
   $('enemyMove').onclick = () => {
     const x = Number($('enemyX').value), y = Number($('enemyY').value);
-    if (enemySelected < 0 || !Number.isFinite(x) || !Number.isFinite(y)) return;
+    if (enemySelected < 0 || !Number.isFinite(x) || !Number.isFinite(y) || !E.movable(enemyRows[enemySelected])) return;
     const before = clone(enemyRows); E.move(enemyRows[enemySelected], x, y); commitEnemies(before, 'Move enemy');
   };
   function saveNpcDetails() {
@@ -335,6 +351,7 @@
   }
   $('toolBlocks').onclick = () => setMode('blocks'); $('toolEnemies').onclick = () => setMode('enemies');
   $('toolNpcs').onclick = () => setMode('npcs');
+  $('showScripts').onchange = () => { enemySelected = -1; syncEnemies(); drawAll(); };
 
   // ---------- toolbar
   function setLayer(l) { if (!sec.layers[l] || l === st.layer) return; st.layer = l; if (st.sel >= nBlk[l]) st.sel = 0; drawAll(); drawPicker(); drawSel(); syncUi(); savePrefs(); }
@@ -367,7 +384,7 @@
   $('impf').onchange = async e => {
     const f = e.target.files[0]; e.target.value = ''; if (!f) return;
     try {
-      const j = JSON.parse(await f.text()); if (!j || j.format !== 'simpsons-stage-edits' || j.v !== 1 || !j.bytes || typeof j.bytes !== 'object' || Array.isArray(j.bytes)) throw new Error('not a supported stage edits file');
+      const j = JSON.parse(await f.text()); if (j && j.bytes) SIMPTILES.migrate(j, orig); if (!j || j.format !== 'simpsons-stage-edits' || j.v !== 1 || !j.bytes || typeof j.bytes !== 'object' || Array.isArray(j.bytes)) throw new Error('not a supported stage edits file');
       const r = S.applyPatch(orig, j.bytes);
       if (r.n !== Object.keys(j.bytes).length) throw new Error('invalid ROM offsets or byte values');
       const importedEnemies = E.validate(j.enemies || {}), importedTilesets = SIMPTILES.validate(j.tilesets || {});
@@ -396,9 +413,10 @@
   (async () => {
     try {
       const files = await SSRROM.ensure();
-      orig = files['prog.bin']; bytes = loadBytes(); work = S.applyPatch(orig, bytes).prog; bytes = S.diff(orig, work);
-      try { const doc = JSON.parse(localStorage.getItem(S.PATCH_KEY) || '{}'); enemyEdits = E.validate(doc.enemies || {}); tilesets = SIMPTILES.validate(doc.tilesets || {}); } catch (e) { enemyEdits = {}; tilesets = {}; }
-      await SIMPTILES.ready;
+      orig = files['prog.bin']; await SIMPTILES.ready;
+      let doc = {}; try { doc = JSON.parse(localStorage.getItem(S.PATCH_KEY) || '{}') || {}; SIMPTILES.migrate(doc, orig); } catch (e) { doc = {}; }
+      bytes = doc.bytes && typeof doc.bytes === 'object' && !Array.isArray(doc.bytes) ? doc.bytes : {}; work = S.applyPatch(orig, bytes).prog; bytes = S.diff(orig, work);
+      try { enemyEdits = E.validate(doc.enemies || {}); tilesets = SIMPTILES.validate(doc.tilesets || {}); } catch (e) { enemyEdits = {}; tilesets = {}; }
       D = S.open(work); tiles = S.decodeTiles(files['gfx_tiles.bin']);
       const sel = $('scene'); S.SCENES.forEach((sc, i) => { const o = document.createElement('option'); o.value = i; o.textContent = sc.name; sel.appendChild(o); });
       loadPrefs(); if (!(st.scene >= 0 && st.scene < S.SCENES.length)) st.scene = 0;

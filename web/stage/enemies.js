@@ -8,6 +8,13 @@
   const SKINS = ['duffman', 'rivet', 'slugger', 'moleman'];
   const signed = n => (n << 24) >> 24;
   const enemy = row => (row.data[4] & 12) === 0 && row.data[7] <= 4;
+  // Every record in the stream, for the editor: basic enemies, the stage's own characters and props (native objects
+  // with their own AI/art), and scripts/triggers (scroll locks, waves, events) that should not be moved.
+  const kind = row => (row.data[4] & 12) === 12 || row.data[7] >= 0xe0 ? 'script' : enemy(row) ? 'enemy' : 'character';
+  const movable = row => kind(row) !== 'script';
+  // Names seen in play for native object ids (data[7]); test/native_capture.js regenerates the crops used to name them.
+  const NAMES = G.SIMPNATIVE_NAMES || {};
+  const label = row => kind(row) === 'script' ? `Script 0x${row.data[7].toString(16)}` : NAMES[row.data[7]] || (enemy(row) ? 'Enemy #' + row.data[7] : `Character 0x${row.data[7].toString(16)}`);
   function read(prog, stage) {
     if (!Number.isInteger(stage) || stage < 0 || stage >= 12) throw new Error('Invalid enemy stage');
     const word = o => (prog[o] << 8) | prog[o + 1];
@@ -28,7 +35,7 @@
       out[k] = rows.map(row => {
         if (!row || !Array.isArray(row.data) || row.data.length !== 8 || row.data.some(v => !Number.isInteger(v) || v < 0 || v > 255) || row.data[0] === 255) throw new Error('Invalid spawn record');
         if (row.skin !== undefined && (!SKINS.includes(row.skin) || !enemy(row))) throw new Error('Invalid enemy skin');
-        if (row.edited !== undefined && (typeof row.edited !== 'boolean' || !enemy(row))) throw new Error('Invalid moved enemy');
+        if (row.edited !== undefined && (typeof row.edited !== 'boolean' || !movable(row))) throw new Error('Invalid moved spawn');
         if (row.role !== undefined && (row.role !== 'npc' || !row.skin)) throw new Error('NPCs need a custom character');
         for (const [key, limit] of [['npcName',40],['dialogue',200]]) if (row[key] !== undefined && (row.role !== 'npc' || typeof row[key] !== 'string' || row[key].length > limit)) throw new Error('Invalid NPC text');
         return { data: row.data.slice(), ...(row.skin ? { skin: row.skin } : {}), ...(row.edited ? { edited: true } : {}), ...(row.role === 'npc' ? {role:'npc',npcName:(row.npcName||'').trim(),dialogue:(row.dialogue||'').trim()} : {}) };
@@ -179,6 +186,6 @@
       for(const r of npcPositions(m)) drawCustom(v,r,0xf0);
     };
   }
-  const api = { STAGES, enemy, read, validate, position, move, make, decode, display, pose, npcPositions, install };
+  const api = { STAGES, enemy, kind, movable, label, NAMES, read, validate, position, move, make, decode, display, pose, npcPositions, install };
   if (typeof module !== 'undefined' && module.exports) module.exports = api; else G.SIMPENEMY = api;
 })(typeof window !== 'undefined' ? window : globalThis);

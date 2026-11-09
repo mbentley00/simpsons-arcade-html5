@@ -27,8 +27,10 @@ try:
         ed.select_option('#tileset', 'school')
         ed.wait_for_function('document.getElementById("scene").options[0].textContent.startsWith("Springfield Elementary")')
         doc = ed.evaluate('JSON.parse(localStorage.getItem(SIMPSTAGE.PATCH_KEY))')
-        assert doc['tilesets'] == {'2': 'school'} and len(doc['bytes']) > 100, 'level saved with its map bytes'
+        assert doc['tilesets']['2']['id'] == 'school' and len(doc['tilesets']['2']['maps'][1]) == 448, 'level saved with its custom maps'
+        assert not doc.get('bytes'), 'the stage ROM maps (and collision) are not edited'
         assert 'Springfield Elementary' in ed.inner_text('#selinfo')
+        os.makedirs(os.path.join(ROOT, 'preview'), exist_ok=True); ed.click('#l0'); ed.screenshot(path=os.path.join(ROOT, 'preview/school_editor.png')); ed.click('#l1')
         n_custom = ed.evaluate('SIMPTILESETS.school.layers[1].count')
         assert ed.evaluate('document.getElementById("pick").height') == -(-n_custom // 8) * 32, 'picker lists the custom blocks'
         # other stages have no school art
@@ -41,10 +43,15 @@ try:
         ed.mouse.click(box['x'] + (2 * 32 + 16) * z, box['y'] + (1 * 32 + 16) * z)
         ed.wait_for_timeout(400)
         assert 'block <b>#5</b>' in ed.inner_html('#selinfo')
+        doc = ed.evaluate('JSON.parse(localStorage.getItem(SIMPSTAGE.PATCH_KEY))')
+        assert doc['tilesets']['2']['maps'][1][1 * 56 + 2] == 5, 'painting edits the custom map'
+        ed.keyboard.press('Control+z'); ed.wait_for_timeout(400)
+        assert ed.evaluate('JSON.parse(localStorage.getItem(SIMPSTAGE.PATCH_KEY)).tilesets["2"].maps[1][58]') == ed.evaluate('SIMPTILESETS.school.layers[1].map[58]'), 'undo restores the cell'
+        ed.keyboard.press('Control+y'); ed.wait_for_timeout(400)
         with ed.expect_download() as dl:
             ed.click('#exp')
         exported = json.load(open(dl.value.path()))
-        assert exported['tilesets'] == {'2': 'school'}
+        assert exported['tilesets']['2']['id'] == 'school' and exported['tilesets']['2']['maps'][1][58] == 5
         with ctx.expect_page() as popup:
             ed.click('#play')
         game = popup.value; game.on('pageerror', lambda e: errors.append(str(e)))
@@ -54,6 +61,13 @@ try:
         game.evaluate('SIMPG.video.render()')
         share = game.evaluate('(() => { const b = SIMPG.video.bmp; let n = 0; for (let y = 16; y < 240; y++) for (let x = 0; x < 320; x++) { const p = b[y * 320 + x]; if (p >= 0x2000 && p < 0x2200) n++; } return n / (320 * 224); })()')
         assert share > 0.5, f'school art covers the stage ({share:.2f})'
+        # the player can walk: Stage 1's collision is untouched
+        cam0 = game.evaluate('(SIMPG.machine.ram[0x8ac] << 8) | SIMPG.machine.ram[0x8ad]')
+        game.evaluate('SIMPG.pause(false)'); game.focus('#screen') if game.locator('#screen').count() else None
+        game.keyboard.down('ArrowRight'); game.wait_for_timeout(5000); game.keyboard.up('ArrowRight'); game.evaluate('SIMPG.pause(true)')
+        cam1 = game.evaluate('(SIMPG.machine.ram[0x8ac] << 8) | SIMPG.machine.ram[0x8ad]')
+        assert cam1 > cam0 + 40, f'walking right scrolls the school level ({cam0} -> {cam1})'
+        game.evaluate('SIMPG.video.render()')
         os.makedirs(os.path.join(ROOT, 'preview'), exist_ok=True)
         game.screenshot(path=os.path.join(ROOT, 'preview/school_level.png'))
         game.close()

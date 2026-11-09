@@ -38,20 +38,39 @@ try:
         # Exercise exactly the native scene-write hook used at stage completion.
         # A strong stage (S rank) shows the results card and a bonus fourth card, with at least one rare/epic.
         game.evaluate('''() => {const m=SIMPG.machine,s=m.arcadeCombat;Object.assign(s.stage,{start:m.frame-6000,best:12,kos:20,elites:2,counters:3,taken:0});m.mw(0x4803,10);m.ram[0x804]=0;SIMPCOMBAT.afterFrame(m);}''')
-        game.wait_for_selector('#upgrade-draft',state='visible');assert game.locator('#upgrade-cards button').count()==4;assert game.evaluate('SIMPG.paused')
-        assert game.locator('#upgrade-rank').inner_text()=='S';assert 'Best combo: 12' in game.locator('#upgrade-stats').inner_text()
-        assert game.locator('#upgrade-cards button:not([data-rarity=common])').count()>=1
-        assert 'Press 1–4' in game.locator('#upgrade-help').inner_text()
+        # The draft is drawn inside the game picture (no HTML panels) and holds the board while it is open.
+        game.wait_for_function('SIMPCOMBAT.drafting && SIMPCOMBAT.cards.length===4')
+        assert game.evaluate('SIMPCOMBAT.blocked && SSRIN.block')
+        assert game.evaluate("['#upgrade-draft','#combat-hud','#combat-callout'].every(q=>!document.querySelector(q))"),'remix UI must not be page panels'
+        res=game.evaluate('SIMPG.machine.arcadeCombat.results');assert res['rank']=='S' and res['best']==12
+        offers=game.evaluate('SIMPG.machine.arcadeCombat.offers');assert len(offers)==4
+        assert any(game.evaluate('(id)=>SIMPCOMBAT.UPGRADES.find(u=>u.id===id).rarity',o)!='common' for o in offers)
+        changed=game.evaluate('(()=>{const a=SIMPG.pixels(),b=SIMPG.screenPixels();let n=0;for(let i=0;i<a.length;i++)if(a[i]!==b[i])n++;return n;})()')
+        assert changed>320*224*0.8,f'draft overlay drawn into the frame ({changed} px)'
+        assert 'keys 1 to 4' in game.locator('#combat-live').text_content()
         game.screenshot(path=os.path.join(ROOT,'preview/upgrade_draft.png'))
-        game.keyboard.press('Tab');assert not game.locator('#chatin').is_visible();assert game.evaluate('document.activeElement.parentElement.id')=='upgrade-cards'
-        choice=game.locator('#upgrade-cards button').nth(3).get_attribute('data-upgrade');game.keyboard.press('4')
-        assert game.evaluate('(id)=>SIMPG.machine.arcadeCombat.upgrades[id]',choice)==1
-        assert not game.locator('#upgrade-draft').is_visible();assert not game.evaluate('SIMPCOMBAT.drafting')
-        game.wait_for_function('!SIMPCOMBAT.blocked')
-        assert 'Ranks: S' in game.locator('#combat-build').text_content()
-        print('ok results card with S rank, fourth bonus card, rarity labels and key 4 selection')
+        game.keyboard.press('ArrowRight');assert game.evaluate('SIMPCOMBAT.selected')==1
+        game.keyboard.press('ArrowLeft');game.keyboard.press('ArrowLeft');assert game.evaluate('SIMPCOMBAT.selected')==3
+        assert not game.locator('#chatin').is_visible()
+        # mouse: click the third card through the canvas mapping
+        card=game.evaluate('SIMPCOMBAT.cards[2]');scr=game.locator('#screen').bounding_box()
+        game.mouse.click(scr['x']+(card['x']+card['w']/2)*scr['width']/320,scr['y']+(card['y']+card['h']/2)*scr['height']/224)
+        assert game.evaluate('(id)=>SIMPG.machine.arcadeCombat.upgrades[id]',offers[2])==1
+        assert not game.evaluate('SIMPCOMBAT.drafting');game.wait_for_function('!SIMPCOMBAT.blocked')
+        print('ok in-game results card with S rank, fourth bonus card, rarity, keyboard selection and canvas click')
+        # a later stage clear: digit keys pick directly
+        game.evaluate('''() => {const m=SIMPG.machine;m.ram[0x803]=11;m.mw(0x4803,12);SIMPCOMBAT.afterFrame(m);}''')
+        game.wait_for_function('SIMPCOMBAT.drafting && SIMPCOMBAT.cards.length>=3')
+        offers=game.evaluate('SIMPG.machine.arcadeCombat.offers');game.keyboard.press('2')
+        assert game.evaluate('(id)=>SIMPG.machine.arcadeCombat.upgrades[id]',offers[1])>=1;assert not game.evaluate('SIMPCOMBAT.drafting')
+        # how-to-play page inside the game: H opens (holds the game), Escape closes
+        game.evaluate('SIMPG.machine.ram[0x803]=9')
+        game.wait_for_function('!SIMPCOMBAT.blocked');game.evaluate('SIMPG.pause(true)');game.evaluate('[SIMPG.machine.ram[0x800],SIMPG.machine.ram[0x802]]=[2,1]');game.keyboard.press('h');game.wait_for_function('SIMPCOMBAT.helpOpen && SIMPCOMBAT.blocked',timeout=3000)
+        game.screenshot(path=os.path.join(ROOT,'preview/remix_help_page.png'))
+        game.keyboard.press('Escape');assert not game.evaluate('SIMPCOMBAT.helpOpen')
+        print('ok second draft picks with digit keys; in-game how-to-play page opens and closes')
         game.evaluate('SIMPG.pause(true)');assert not errors,errors
-        print('ok stage-clear draft pauses play, offers three upgrades and applies the selected persistent run upgrade')
+        print('ok stage-clear draft holds play and applies the selected persistent run upgrade; no page errors')
         os.makedirs(os.path.join(ROOT,'preview'),exist_ok=True);game.screenshot(path=os.path.join(ROOT,'preview/npc_remix.png'))
         browser.close()
 finally:server.shutdown()

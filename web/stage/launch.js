@@ -39,7 +39,7 @@
     if (!target) return false;
     const overlay = document.createElement('div'); overlay.id = 'stage-launch'; overlay.setAttribute('role', 'status');
     overlay.style.cssText = 'position:fixed;inset:0;z-index:100;display:grid;place-content:center;text-align:center;background:#17120d;color:#ffc861;font:18px system-ui;padding:24px';
-    const title = document.createElement('strong'); const ts = SIMPMODS.tilesets && SIMPMODS.tilesets[target.scene]; title.textContent = 'Starting ' + (ts && G.SIMPTILES ? SIMPTILES.sets[ts].name : target.name);
+    const title = document.createElement('strong'); const ts = SIMPMODS.tilesets && SIMPMODS.tilesets[target.scene]; title.textContent = 'Starting ' + (ts && G.SIMPTILES ? SIMPTILES.sets[ts.id].name : target.name);
     const detail = document.createElement('p'); detail.textContent = 'Preparing gameplay. Introductions will be skipped.';
     overlay.append(title, detail); document.body.appendChild(overlay);
     let patch = ''; try { patch = localStorage.getItem(SIMPSTAGE.PATCH_KEY) || ''; } catch (e) { /* optional storage */ }

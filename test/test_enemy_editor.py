@@ -26,7 +26,8 @@ try:
         assert page.locator('#enemyPreview').get_attribute('aria-label') == 'Rivet enemy preview'
         page.select_option('#enemyKind', 'duffman')
         assert page.locator('#enemyPanel').is_visible()
-        assert page.locator('#enemyList option').count() == 24
+        base = page.locator('#enemyList option').count()  # basic enemies plus the stage's own characters
+        assert page.evaluate('[...document.querySelectorAll("#enemyList option")].filter(o => o.textContent.startsWith("Enemy #")).length') == 24
         box = page.locator('#map').bounding_box()
         zoom = page.evaluate('document.getElementById("map").getBoundingClientRect().width / document.getElementById("map").width')
         page.mouse.click(box['x'] + 240 * zoom, box['y'] + 192 * zoom)
@@ -34,18 +35,18 @@ try:
         def duff():
             return page.evaluate('JSON.parse(localStorage.getItem(SIMPSTAGE.PATCH_KEY)).enemies[0].find(r => r.skin === "duffman")')
         assert duff()['data'][:3] == [0, 240, 24]
-        assert page.locator('#enemyList option').count() == 25
+        assert page.locator('#enemyList option').count() == base + 1
         print('ok lists original enemies and adds Duffman at the clicked map position')
         page.fill('#enemyX', '272'); page.fill('#enemyY', '184'); page.click('#enemyMove')
         page.wait_for_timeout(300); assert duff()['data'][:3] == [1, 16, 23]
         page.click('#undo'); page.wait_for_timeout(300); assert duff()['data'][:3] == [0, 240, 24]
         page.click('#redo'); page.wait_for_timeout(300); assert duff()['data'][:3] == [1, 16, 23]
         print('ok numeric movement and undo/redo')
-        page.select_option('#enemyList', index=24)
+        page.select_option('#enemyList', index=base)
         page.click('#enemyDelete'); page.wait_for_timeout(300)
         assert page.evaluate('localStorage.getItem(SIMPSTAGE.PATCH_KEY)') is None
         page.click('#undo'); page.wait_for_timeout(300); assert duff()
-        page.select_option('#enemyList', index=24)
+        page.select_option('#enemyList', index=base)
         box = page.locator('#map').bounding_box()
         page.mouse.move(box['x'] + 272 * zoom, box['y'] + 184 * zoom)
         page.mouse.down(); page.mouse.move(box['x'] + 296 * zoom, box['y'] + 208 * zoom, steps=4); page.mouse.up()

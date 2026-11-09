@@ -69,3 +69,5 @@ let rare=0,all=0;for(let s=1;s<400;s++){const b=board();b.arcadeCombat.rng=s;b.m
 assert(rare/all>.03&&rare/all<.16,'epic cards are uncommon: '+rare/all);
 m=board();C.afterFrame(m);m.ram[0x803]=4;C.afterFrame(m);assert.equal(m.arcadeCombat.stage.level,2,'stats reset when the next stage starts');
 console.log('ok stage results rank, S/A draft bonuses, rarity weights and per-stage stats');
+// The in-game overlay draws nothing without a page (Node), and never touches the frame it is given then.
+{const px=new Uint32Array(320*224).fill(7);assert.equal(C.drawOverlay(px),false);assert(px.every(v=>v===7));console.log('ok overlay is presentation-only and inert without a page');}

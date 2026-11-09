@@ -44,17 +44,16 @@
   function random(s) { let x=s.rng; x^=x<<13; x^=x>>>17; x^=x<<5; s.rng=x>>>0; return s.rng; }
   function heal(m,p,n) { const o=0xa40+p*0xc0; if(m.ram[o]&0x40) m.ram[o+0x1b]=Math.min(maximum(m.arcadeCombat),m.ram[o+0x1b]+n); }
   function message(m,text) { const s=m.arcadeCombat; s.message=text; s.messageUntil=m.frame+90; }
-  // Presentation only: a short wall-clock hit-stop (game.js skips frames while blocked), a screen shake and a callout.
-  // None of it is board state, so save/load and the seeded run stay identical with or without it.
-  function feedback(kind,text) {
+  // Presentation only: a short wall-clock hit-stop (game.js skips frames while blocked), a screen shake and a callout
+  // drawn into the game picture. None of it is board state, so save/load and the seeded run stay identical.
+  function feedback(kind,text,p=0) {
     if(!ui) return;
-    const calm=G.matchMedia&&G.matchMedia('(prefers-reduced-motion: reduce)').matches;
+    const t=now(), calm=G.matchMedia&&G.matchMedia('(prefers-reduced-motion: reduce)').matches;
     if(!calm) {
-      stopUntil=Math.max(stopUntil,now()+(STOP_MS[kind]||0));
-      const amp=kind==='launcher'||kind==='counter'?4:2;
-      for(const el of document.querySelectorAll('#screen, #screen + canvas')) el.animate?.([{translate:'0 0'},{translate:`${amp}px ${-amp/2}px`},{translate:`${-amp}px ${amp/2}px`},{translate:'0 0'}],{duration:140});
+      stopUntil=Math.max(stopUntil,t+(STOP_MS[kind]||0));
+      ui.shake={at:t,amp:kind==='launcher'||kind==='counter'?3:2};
     }
-    if(text) { const c=ui.callout; c.textContent=text; c.dataset.kind=kind; c.classList.remove('pop'); void c.offsetWidth; c.classList.add('pop'); }
+    if(text) ui.callout={text,kind,p,at:t,calm};
   }
   function landed(m,p,o,damage,remaining,kind) {
     const s=m.arcadeCombat, a=s.players[p], r=m.ram;
@@ -74,13 +73,13 @@
     }
     const text=launch?'LAUNCHER!':waved?'SHOCKWAVE!':countering&&kind!=='special'?'COUNTER!':kind==='air'?'AIR HIT!':finisher?'CHAIN FINISHER!':`${a.combo} HIT COMBO`;
     message(m,text);
-    if(kind!=='special'&&(launch||waved||finisher||countering)) feedback(launch?'launcher':waved?'shockwave':countering?'counter':'finisher',text);
+    if(kind!=='special'&&(launch||waved||finisher||countering)) feedback(launch?'launcher':waved?'shockwave':countering?'counter':'finisher',text,p);
     if(!remaining) defeated(m,p,o,kind!=='special');
   }
   function defeated(m,p,o,focus) {
     const s=m.arcadeCombat,a=s.players[p]; s.stage.kos++;
     heal(m,p,2*(s.upgrades.leech||0)); if(focus) a.focus=Math.min(100,a.focus+5);
-    if(s.elite[o]) { delete s.elite[o]; s.stage.elites++; a.focus=Math.min(100,a.focus+15); heal(m,p,4); message(m,'ELITE DOWN!'); feedback('finisher','ELITE DOWN!'); }
+    if(s.elite[o]) { delete s.elite[o]; s.stage.elites++; a.focus=Math.min(100,a.focus+15); heal(m,p,4); message(m,'ELITE DOWN!'); feedback('elite','ELITE DOWN!',p); }
   }
   // Stage rank from plain run data; the par time grows with the stage.
   function rate(st,frame) {
@@ -110,7 +109,7 @@
     for(let p=0;p<4;p++) { if(id==='vitality') heal(m,p,8); if(id==='heal') heal(m,p,255); }
     s.offers=[]; s.pendingLevel=0; queued=[];
     if(G.SSRIN) { G.SSRIN.block=false; for(const k in G.SSRIN.held) G.SSRIN.held[k]=0; G.SSRIN.consumeLatch(); }
-    if(G.SIMPG) G.SIMPG.pause(false); updateUI(); return true;
+    updateUI(); return true;
   }
   function install(m,options={}) {
     if(!enabled) return;
@@ -141,7 +140,7 @@
               // A real enemy hit landing inside the dodge opens a counter window (once per dodge).
               if(!state.countered) {
                 state.countered=true; state.counterUntil=m.frame+60+30*(s.upgrades.riposte||0); s.stage.counters++;
-                state.focus=Math.min(100,state.focus+10); message(this,'PERFECT DODGE — COUNTER!'); feedback('counter','PERFECT DODGE!');
+                state.focus=Math.min(100,state.focus+10); message(this,'PERFECT DODGE - COUNTER!'); feedback('counter','PERFECT DODGE!',p);
               }
             } else value=Math.max(0,old-Math.max(1,old-value-(s.upgrades.armor||0)));
             if(value<old) { state.combo=0; state.focus=Math.max(0,state.focus-5); s.stage.taken+=old-value; }
@@ -213,7 +212,7 @@
           const damage=Math.ceil(8*(1+.2*(s.upgrades.power||0))); r[e+0x1b]=Math.max(0,r[e+0x1b]-damage); r[e]|=0x20; r[e+0x1e]=3; put(r,e+0x25,0x4000+o);
           landed(m,action.p,e,damage,r[e+0x1b],'special'); if(regular(e))s.effects.push({o:e,launch:true,dir:a.dir}); hits++;
         }
-        message(m,hits?'FOCUS BURST!':'FOCUS BURST — no targets'); if(hits) feedback('launcher','FOCUS BURST!');
+        message(m,hits?'FOCUS BURST!':'FOCUS BURST - NO TARGETS'); if(hits) feedback('launcher','FOCUS BURST!',action.p);
       }
     }
   }
@@ -246,52 +245,184 @@
       else if(e.pop) put(r,e.o+0x19,Math.max(0x300,word(r,e.o+0x19)));
     }
     } else s.effects=[];
-    if(s.offers.length&&G.SIMPG&&!G.SIMPG.paused) { G.SIMPG.pause(true); if(G.SSRIN) G.SSRIN.block=true; }
+    // The draft holds the game (SIMPCOMBAT.blocked) and is drawn inside the picture; local input goes to the cards.
+    if(s.offers.length&&G.SSRIN&&!G.SSRIN.block) G.SSRIN.block=true;
     updateUI();
   }
+  // ---------- in-game presentation: drawn into the finished 320x224 frame by game.js (SIMPCOMBAT.drawOverlay) so it
+  // scales and gets the CRT treatment with the game. Arcade-style 3x5 pixel font, chunky panels. Never board state.
+  const SW=320, SH=224, STRIP_Y=31, SCREEN_HINT_FRAMES=420;
+  const GLYPHS={'A':'.#.#.#####.##.#','B':'##.#.###.#.###.','C':'.###..#..#...##','D':'##.#.##.##.###.','E':'####..##.#..###','F':'####..##.#..#..','G':'.###..#.##.#.##','H':'#.##.#####.##.#','I':'###.#..#..#.###','J':'..#..#..##.#.#.','K':'#.##.###.#.##.#','L':'#..#..#..#..###','M':'#.########.##.#','N':'##.#.##.##.##.#','O':'.#.#.##.##.#.#.','P':'##.#.###.#..#..','Q':'.#.#.##.###..##','R':'##.#.###.#.##.#','S':'.###...#...###.','T':'###.#..#..#..#.','U':'#.##.##.##.####','V':'#.##.##.##.#.#.','W':'#.##.########.#','X':'#.##.#.#.#.##.#','Y':'#.##.#.#..#..#.','Z':'###..#.#.#..###','0':'####.##.##.####','1':'.#.##..#..#.###','2':'##...#.#.#..###','3':'##...#.#...###.','4':'#.##.####..#..#','5':'####..##...###.','6':'.###..####.####','7':'###..#.#..#..#.','8':'####.#####.####','9':'####.####..###.','.':'.............#.',',':'..........#.#..',':':'....#.....#....','!':'.#..#..#.....#.','?':'##...#.#.....#.','+':'....#.###.#....','-':'......###......','%':'#....#.#.#....#','/':'..#..#.#.#..#..',"'":'.#..#..........','(':'.#.#..#..#...#.',')':'.#...#..#..#.#.','x':'...#.#.#.#.#...','<':'..#.#.#...#...#','>':'#...#...#.#.#..','^':'.#.###.#..#..#.','v':'......#.##.#.#.','*':'.......#.......','#':'#.#####.#####.#',' ':'...............'};
+  const rgb=(r,g,b)=>(0xff000000|(b<<16)|(g<<8)|r)>>>0;
+  const COL={ink:rgb(14,10,20),gold:rgb(255,204,72),white:rgb(255,246,226),cyan:rgb(110,232,255),purple:rgb(222,140,255),blue:rgb(96,176,255),
+    orange:rgb(255,146,40),red:rgb(244,72,60),green:rgb(116,224,92),grey:rgb(168,156,140),panel:rgb(34,22,14),panel2:rgb(60,40,24),dim:rgb(96,84,72)};
+  const RCOL={common:COL.gold,rare:COL.blue,epic:COL.purple}, RANKCOL={S:COL.cyan,A:COL.gold,B:COL.green,C:COL.grey};
+  const KCOL={counter:COL.cyan,shockwave:COL.purple,launcher:COL.orange,elite:COL.red,finisher:COL.gold};
+  const clean=t=>String(t).toUpperCase().replace(/[—–]/g,'-').replace(/[·•]/g,'*').replace(/×/g,'x').replace(/↑/g,'^');
+  function fill(px,x,y,w,h,c){x|=0;y|=0;const x0=Math.max(0,x),y0=Math.max(0,y),x1=Math.min(SW,x+w),y1=Math.min(SH,y+h);for(let j=y0;j<y1;j++)px.fill(c,j*SW+x0,j*SW+x1);}
+  function shade(px,x,y,w,h){const x0=Math.max(0,x|0),y0=Math.max(0,y|0),x1=Math.min(SW,(x+w)|0),y1=Math.min(SH,(y+h)|0);for(let j=y0;j<y1;j++)for(let i=j*SW+x0,e=j*SW+x1;i<e;i++){const c=px[i];px[i]=(0xff000000|((c>>>2)&0x3f3f3f)+((c>>>3)&0x1f1f1f))>>>0;}}
+  function box(px,x,y,w,h,border,bg){fill(px,x-1,y-1,w+2,h+2,COL.ink);fill(px,x,y,w,h,border);if(bg!==undefined)fill(px,x+2,y+2,w-4,h-4,bg);}
+  const tw=(t,k=1)=>clean(t).length*4*k-k;
+  function glyphs(px,x,y,t,c,k){
+    for(const ch of clean(t)){const g=GLYPHS[ch]||GLYPHS[' '];for(let i=0;i<15;i++)if(g[i]==='#')fill(px,x+(i%3)*k,y+((i/3)|0)*k,k,k,c);x+=4*k;}
+  }
+  function text(px,x,y,t,c,k=1,outline=true){
+    if(outline)for(const [dx,dy] of [[-1,0],[1,0],[0,-1],[0,1],[-1,-1],[1,1],[1,-1],[-1,1]])glyphs(px,x+dx,y+dy,t,COL.ink,k);
+    glyphs(px,x,y,t,c,k);
+  }
+  const center=(px,y,t,c,k=1)=>text(px,((SW-tw(t,k))/2)|0,y,t,c,k);
+  function wrap(t,n){const out=[];let line='';for(const w of clean(t).split(' ')){if(line&&(line+' '+w).length>n){out.push(line);line=w;}else line=line?line+' '+w:w;}if(line)out.push(line);return out;}
+  const blink=(t,ms=500)=>Math.floor(t/ms)%2===0;
+  function playerPos(r,p){const o=0xa40+p*0xc0;return {x:word(r,o+0xc)-54,feet:374-word(r,o+0x11)-r[o+0x17]};}
+  function drawStrip(px,s,r,t){
+    for(let p=0;p<4;p++){
+      const o=0xa40+p*0xc0; if(!(r[o]&0x40)) continue;
+      // one strip under each native player panel (panels span x 20..300, ~70 px each)
+      const a=s.players[p],x=21+Math.round(p*70.25),y=STRIP_Y,cost=burstCost(s),M=26;
+      shade(px,x-1,y-1,69,9);
+      text(px,x+1,y+1,'F',COL.white,1,false);
+      fill(px,x+6,y+1,M+2,5,COL.ink);fill(px,x+7,y+2,M,3,COL.dim);
+      fill(px,x+7,y+2,Math.round(M*a.focus/100),3,a.focus>=cost?(a.focus>=100&&blink(t,200)?COL.white:COL.gold):COL.orange);
+      fill(px,x+7+Math.round(M*cost/100),y+1,1,5,COL.white);
+      const tx=x+37;
+      if(machine.frame<=a.counterUntil){ if(blink(t,150)) text(px,tx,y+1,'COUNTER',COL.cyan,1,false); }
+      else if(a.combo>=2) text(px,tx,y+1,a.combo+' HIT',a.combo>=10?COL.red:COL.gold,1,false);
+      else { const n=Object.values(s.upgrades).reduce((u,v)=>u+v,0); if(n) text(px,tx,y+1,'+'+n+' UPG',COL.grey,1,false); }
+    }
+  }
+  function drawCallout(px,r,t){
+    const c=ui.callout; if(!c) return false;
+    const age=t-c.at; if(age>800){ui.callout=null;return false;}
+    if(age>600&&!c.calm&&!blink(t,60)) return true;
+    const k=!c.calm&&age<90?3:2, pos=playerPos(r,c.p), w=tw(c.text,k);
+    const x=Math.max(4,Math.min(SW-4-w,pos.x-(w>>1))), y=Math.max(STRIP_Y+12,Math.min(150,pos.feet-92-(age<90?0:Math.min(8,age/40|0))));
+    text(px,x|0,y|0,c.text,KCOL[c.kind]||COL.gold,k); return true;
+  }
+  function drawDraft(px,s,t){
+    shade(px,0,0,SW,SH);
+    const res=s.results, n=s.offers.length;
+    center(px,10,`STAGE ${s.pendingLevel} CLEAR!`,COL.gold,2);
+    box(px,16,30,288,48,COL.panel2,COL.panel);
+    if(res){
+      const rc=RANKCOL[res.rank]||COL.gold; box(px,24,36,34,36,rc,COL.ink); text(px,30,40,res.rank,rc,6,false);
+      const time=`${Math.floor(res.secs/60)}:${String(res.secs%60).padStart(2,'0')}`;
+      const rows=[['TIME',time],['BEST COMBO',res.best],['KOS',res.kos],['DAMAGE',res.taken],['ELITES',res.elites],['COUNTERS',res.counters]];
+      rows.forEach(([l,v],i)=>{const cx=70+(i%2)*116,cy=38+((i/2)|0)*10;text(px,cx,cy,l,COL.grey,1,false);text(px,cx+92-tw(String(v)),cy,String(v),COL.white,1,false);});
+      const note=res.rank==='S'?'S RANK: BONUS 4TH CARD':res.rank==='A'?'A RANK: RARE OR BETTER GUARANTEED':'';
+      if(note) text(px,70,68,note,rc,1,false);
+    }
+    const gap=6,cw=Math.floor((288-gap*(n-1))/n),cy=88,ch=106; ui.cards=[];
+    if(ui.sel>=n) ui.sel=0;
+    s.offers.forEach((id,i)=>{
+      const u=UPGRADES.find(x=>x.id===id),col=RCOL[u.rarity],sel=i===ui.sel,x=16+i*(cw+gap),y=cy-(sel?3:0);
+      ui.cards.push({x,y,w:cw,h:ch,id});
+      if(sel) fill(px,x-3,y-3,cw+6,ch+6,blink(t,250)?COL.white:col);
+      box(px,x,y,cw,ch,col,sel?COL.panel2:COL.panel);
+      fill(px,x+2,y+2,cw-4,9,col); text(px,x+4,y+4,`${i+1}`,COL.ink,1,false);
+      const tier=RARITY[u.rarity].label; text(px,x+cw-3-tw(tier),y+4,tier,COL.ink,1,false);
+      const chars=Math.floor((cw-8)/4); let ly=y+15;
+      for(const line of wrap(u.name,chars)){text(px,x+4,ly,line,COL.gold,1,false);ly+=7;}
+      ly+=3; for(const line of wrap(u.text,chars)){if(ly>y+ch-16)break;text(px,x+4,ly,line,COL.white,1,false);ly+=7;}
+      const own=s.upgrades[id]||0; if(own) text(px,x+4,y+ch-10,`OWNED x${own}`,COL.grey,1,false);
+    });
+    if(blink(t,600)) center(px,206,`< > CHOOSE   ATTACK OR 1-${n} TAKES`,COL.white);
+  }
+  function drawHelp(px,s,t){
+    shade(px,0,0,SW,SH); box(px,14,14,292,196,COL.gold,COL.panel);
+    center(px,22,'HOW TO PLAY',COL.gold,2);
+    const lines=[['ATTACK','CHAIN HITS. EVERY 3RD HIT IS A FINISHER'],['^ + ATTACK','LAUNCHER. AIR HITS JUGGLE'],['C / LB','DODGE. DODGE A HIT TO COUNTER'],
+      ['Q / RB',`FOCUS BURST (${burstCost(s)} FOCUS)`],['ELITES','EXTRA HEALTH. DROP FOCUS + HEALTH'],['STAGE CLEAR','RANK S-C. PICK AN UPGRADE']];
+    lines.forEach(([a,b],i)=>{text(px,24,46+i*10,a,COL.cyan,1,false);text(px,84,46+i*10,b,COL.white,1,false);});
+    text(px,24,112,'YOUR RUN',COL.gold,1,false);
+    const build=Object.entries(s.upgrades).map(([id,n])=>(UPGRADES.find(u=>u.id===id)?.name||id)+' x'+n).join(', ')||'NO UPGRADES YET';
+    let y=122; for(const line of wrap(build,68).slice(0,5)){text(px,24,y,line,COL.white,1,false);y+=8;}
+    if(s.history.length) text(px,24,y+2,'RANKS: '+s.history.map(h=>h.rank).join(' '),COL.grey,1,false);
+    if(blink(t,600)) center(px,196,'H OR ESC: BACK   N: NEW RUN',COL.white);
+  }
+  function drawOverlay(px) {
+    if(!ui||!machine||!machine.arcadeCombat) return false;
+    const s=machine.arcadeCombat,r=machine.ram,t=now(); let drew=false;
+    pollPads(s);
+    if(ui.shake){ const age=t-ui.shake.at; if(age>140) ui.shake=null; else {
+      const ph=(age/35|0)%4,dx=[ui.shake.amp,-ui.shake.amp,ui.shake.amp>>1,0][ph],dy=[-1,1,0,0][ph],src=px.slice();
+      for(let y=0;y<SH;y++){const sy=Math.max(0,Math.min(SH-1,y-dy));for(let x=0;x<SW;x++)px[y*SW+x]=src[sy*SW+Math.max(0,Math.min(SW-1,x-dx))];} drew=true; } }
+    if(s.offers.length){ drawDraft(px,s,t); mirror(s); return true; }
+    if(ui.help){ drawHelp(px,s,t); return true; }
+    if(!playing(machine)||!LEVELS[r[0x803]]) return drew;
+    drawStrip(px,s,r,t);
+    const big=drawCallout(px,r,t);
+    if(!big&&machine.frame<s.messageUntil&&!/HIT COMBO$/.test(s.message)) center(px,STRIP_Y+12,s.message,COL.white);
+    if(machine.frame-s.stage.start<SCREEN_HINT_FRAMES&&blink(t,700)) text(px,SW-4-tw('H: HOW TO PLAY'),214,'H: HOW TO PLAY',COL.gold);
+    return true;
+  }
+  function mirror(s) { // screen-reader text for the in-game draft
+    const key=s.offers.join(',')+'|'+s.pendingLevel; if(!ui.live||key===ui.last) return; ui.last=key; ui.sel=0;
+    const res=s.results;
+    ui.live.textContent=`Stage ${s.pendingLevel} clear.`+(res?` Rank ${res.rank}. Time ${res.secs} seconds, best combo ${res.best}, ${res.kos} KOs, damage taken ${res.taken}.`:'')+
+      ` Choose an upgrade with keys 1 to ${s.offers.length}: `+s.offers.map((id,i)=>{const u=UPGRADES.find(x=>x.id===id);return `${i+1}. ${u.name}, ${RARITY[u.rarity].label}: ${u.text}`;}).join(' ');
+  }
+  function moveSel(d){const s=machine?.arcadeCombat;if(!s?.offers.length)return;ui.sel=(ui.sel+d+s.offers.length)%s.offers.length;}
+  function takeSel(){const s=machine?.arcadeCombat;if(s?.offers.length)choose(s.offers[ui.sel]||s.offers[0]);}
+  function pollPads(s) {
+    const pads=G.navigator?.getGamepads?G.navigator.getGamepads():[];
+    for(let i=0;i<pads.length;i++){
+      const pad=pads[i]; if(!pad?.connected) continue;
+      const b=n=>!!pad.buttons[n]?.pressed, ax=pad.axes[0]||0;
+      const bits=(b(14)||ax<-0.5?1:0)|(b(15)||ax>0.5?2:0)|(b(0)||b(2)?4:0)|(b(1)||b(3)?8:0);
+      const edge=bits&~(ui.pads[i]||0); ui.pads[i]=bits;
+      if(s.offers.length){ if(edge&1)moveSel(-1); if(edge&2)moveSel(1); if(edge&4)takeSel(); }
+      else if(ui.help&&(edge&12)) setHelp(false);
+    }
+  }
+  function setHelp(open) {
+    if(!ui||ui.help===open) return; ui.help=open;
+    if(G.SSRIN){ G.SSRIN.block=open; for(const k in G.SSRIN.held) G.SSRIN.held[k]=0; G.SSRIN.consumeLatch(); }
+    if(open&&ui.live) ui.live.textContent='How to play. Attack chains build on landed hits; every third hit is a finisher. Up plus attack launches. C or LB dodges; dodging a hit opens a counter. Q or RB uses Focus Burst. Press H or Escape to return, N for a new run.';
+  }
+  const GAME_KEYS=/^(Arrow|Key[WASDZJXK]$|Enter$|Space$|Numpad|Digit[1-4]$)/;
   function buildUI() {
     if(ui) return;
-    const style=document.createElement('style'); style.textContent=`#combat-hud{position:fixed;left:12px;top:54px;z-index:16;color:#ffe4a0;background:rgba(18,12,6,.83);padding:8px;border-radius:6px;font:12px system-ui;max-width:255px}#combat-hud progress{width:90px;vertical-align:middle;accent-color:#ffc861}#combat-hud details{margin-top:4px}#combat-hud a{color:#86d6ff}#combat-counter{color:#7fe3ff}#upgrade-draft{position:fixed;inset:0;z-index:60;display:grid;place-content:center;background:rgba(0,0,0,.86);padding:20px;color:#fff1d5;font:15px system-ui}#upgrade-draft[hidden]{display:none}#upgrade-draft section{max-width:900px;max-height:85vh;overflow:auto}#upgrade-results{display:flex;gap:14px;align-items:center;margin:0 0 14px;padding:10px 14px;border-radius:10px;background:#1d1610}#upgrade-rank{font:800 46px system-ui;width:60px;text-align:center;color:#ffc861}#upgrade-rank[data-rank=S]{color:#7fe3ff}#upgrade-rank[data-rank=C]{color:#c9a98a}#upgrade-stats{display:grid;grid-template-columns:repeat(3,auto);gap:2px 18px;font-size:13px}#upgrade-cards{display:flex;gap:10px;flex-wrap:wrap}#upgrade-cards button{flex:1;min-width:185px;padding:20px;background:#2d2117;color:#fff1d5;border:2px solid #c8892e;border-radius:10px;text-align:left;cursor:pointer}#upgrade-cards button[data-rarity=rare]{border-color:#53b8f0;background:#17232d}#upgrade-cards button[data-rarity=epic]{border-color:#d07af5;background:#24172d}#upgrade-cards b{display:block;color:#ffc861;font-size:18px;margin-bottom:4px}#upgrade-cards i{display:block;font-size:11px;font-style:normal;letter-spacing:.08em;text-transform:uppercase;opacity:.8;margin-bottom:8px}#upgrade-cards button:focus-visible{outline:3px solid #fff}#combat-hud summary{cursor:pointer}#combat-callout{position:fixed;left:50%;top:26%;z-index:17;transform:translate(-50%,-50%);pointer-events:none;font:900 34px system-ui;color:#ffc861;text-shadow:0 3px 0 #5a2c00,0 0 12px #000;opacity:0;white-space:nowrap}#combat-callout[data-kind=counter]{color:#7fe3ff}#combat-callout[data-kind=shockwave]{color:#e9a6ff}#combat-callout.pop{animation:combat-pop .7s ease-out}@keyframes combat-pop{0%{opacity:0;transform:translate(-50%,-50%) scale(.6)}15%{opacity:1;transform:translate(-50%,-50%) scale(1.15)}70%{opacity:1;transform:translate(-50%,-50%) scale(1)}100%{opacity:0;transform:translate(-50%,-60%) scale(1)}}@media (prefers-reduced-motion:reduce){#combat-callout.pop{animation-duration:1.2s;animation-name:combat-fade}@keyframes combat-fade{0%,80%{opacity:1}100%{opacity:0}}}`; document.head.appendChild(style);
-    const hud=document.createElement('div'); hud.id='combat-hud';
-    hud.innerHTML='<div id="combat-status"></div><div>Focus <progress id="combat-focus" max="100" value="50" aria-label="Focus"></progress> <span id="combat-meter"></span></div><div id="combat-message"></div><div id="combat-counter" hidden>COUNTER READY</div><details><summary>Moves & run upgrades</summary><p>Attack chains build on landed hits. Every third hit is a finisher. ↑ + Attack launches. Air hits juggle.<br>C: dodge. Dodge through an enemy hit for a perfect-dodge counter: harder hits for a moment.<br>Q: Focus Burst (50 focus).<br>Gamepad LB: dodge · RB: Focus Burst.<br>Elite enemies have extra health and drop focus and health.<br>Each stage clear is ranked S–C. A guarantees a rare or epic card; S adds a fourth card. Upgrades reset when the run ends.</p><div id="combat-build"></div><a href="index.html?scene=2&play=1">Start a new run</a></details>';
-    const draftUI=document.createElement('div'); draftUI.id='upgrade-draft'; draftUI.hidden=true; draftUI.setAttribute('role','dialog'); draftUI.setAttribute('aria-modal','true'); draftUI.setAttribute('aria-labelledby','upgrade-title'); draftUI.innerHTML='<section><h2 id="upgrade-title"></h2><div id="upgrade-results"><div id="upgrade-rank" aria-label="Stage rank"></div><div id="upgrade-stats"></div></div><p id="upgrade-help"></p><div id="upgrade-cards"></div></section>';
-    const callout=document.createElement('div'); callout.id='combat-callout'; callout.setAttribute('aria-hidden','true');
-    document.body.append(hud,draftUI,callout); ui={hud,draft:draftUI,callout,last:''};
+    const live=document.createElement('div'); live.id='combat-live'; live.setAttribute('aria-live','polite'); live.setAttribute('role','status');
+    live.style.cssText='position:absolute;width:1px;height:1px;overflow:hidden;clip:rect(0 0 0 0);white-space:nowrap';
+    document.body.appendChild(live);
+    ui={live,callout:null,shake:null,sel:0,help:false,last:'',cards:[],pads:{}};
     addEventListener('keydown',e=>{
-      if(!machine) return; const s=machine.arcadeCombat;
+      if(!machine||!machine.arcadeCombat) return; const s=machine.arcadeCombat;
       if(s.offers.length) {
-        e.stopImmediatePropagation(); const n=+e.key-1;
-        if(n>=0&&n<s.offers.length){e.preventDefault();choose(s.offers[n]);}
-        else if(e.code==='Tab'){e.preventDefault();const cards=[...document.querySelectorAll('#upgrade-cards button')],i=cards.indexOf(document.activeElement);cards[(i+(e.shiftKey?cards.length-1:1))%cards.length]?.focus();}
+        if(!GAME_KEYS.test(e.code)) return;
+        e.stopImmediatePropagation(); e.preventDefault(); if(e.repeat) return;
+        const n=+e.key-1;
+        if(n>=0&&n<s.offers.length) choose(s.offers[n]);
+        else if(/^(ArrowLeft|KeyA|Numpad4)$/.test(e.code)) moveSel(-1);
+        else if(/^(ArrowRight|KeyD|Numpad6)$/.test(e.code)) moveSel(1);
+        else if(/^(Enter|Space|KeyZ|KeyJ|Numpad0|NumpadEnter)$/.test(e.code)) takeSel();
+        return;
+      }
+      if(ui.help) {
+        if(e.code==='KeyP'||e.code==='F8') return;
+        e.stopImmediatePropagation(); e.preventDefault();
+        if(/^(KeyH|Escape|Enter|KeyZ|KeyJ|KeyX|KeyK)$/.test(e.code)) setHelp(false);
+        else if(e.code==='KeyN') location.href='index.html?scene=2&play=1';
         return;
       }
       const t=e.target;if(e.repeat||e.ctrlKey||e.metaKey||e.altKey||t?.isContentEditable||/^(INPUT|TEXTAREA|SELECT)$/.test(t?.tagName||''))return;
+      if(e.code==='KeyH'&&playing(machine)){e.preventDefault();setHelp(true);return;}
       if(e.code==='KeyQ'||e.code==='KeyC'){e.preventDefault();request(e.code==='KeyQ'?'special':'dodge');}
     },true);
+    const at=e=>{const sc=document.getElementById('screen');if(!sc)return null;const b=sc.getBoundingClientRect();if(!b.width)return null;return {x:(e.clientX-b.left)*SW/b.width,y:(e.clientY-b.top)*SH/b.height};};
+    const hit=p=>p&&ui.cards.findIndex(c=>p.x>=c.x&&p.x<c.x+c.w&&p.y>=c.y&&p.y<c.y+c.h);
+    addEventListener('pointermove',e=>{if(!machine?.arcadeCombat?.offers.length)return;const i=hit(at(e));if(i>=0)ui.sel=i;});
+    addEventListener('pointerdown',e=>{
+      const s=machine?.arcadeCombat;if(!s)return;
+      if(s.offers.length){const i=hit(at(e));if(i>=0){e.preventDefault();choose(ui.cards[i].id);}return;}
+      if(ui.help){const p=at(e);if(p&&p.x>=0&&p.x<SW&&p.y>=0&&p.y<SH){e.preventDefault();setHelp(false);}}
+    });
   }
-  function updateUI() {
-    if(!ui||!machine) return; const s=machine.arcadeCombat,p=s.players[0];
-    document.getElementById('combat-status').textContent=`HP ${machine.ram[0xa5b]}/${maximum(s)} · ${p.combo} HIT · BEST ${p.best} · ${s.won?'RUN CLEAR':'STAGE '+s.level} · ${Object.values(s.upgrades).reduce((a,b)=>a+b,0)} UPGRADES`;
-    document.getElementById('combat-build').textContent='Build: '+(Object.entries(s.upgrades).map(([id,n])=>(UPGRADES.find(u=>u.id===id)?.name||id)+' ×'+n).join(', ')||'No upgrades yet')+(s.history.length?' · Ranks: '+s.history.map(h=>h.rank).join(' '):'');
-    document.getElementById('combat-focus').value=p.focus; document.getElementById('combat-meter').textContent=`${p.focus}/100 (burst ${burstCost(s)})`;
-    document.getElementById('combat-message').textContent=machine.frame<s.messageUntil?s.message:'↑+Attack launch · C dodge · Q special';
-    document.getElementById('combat-counter').hidden=machine.frame>p.counterUntil;
-    ui.draft.hidden=!s.offers.length;
-    const key=s.offers.join(','); if(key&&key!==ui.last) {
-      const res=s.results;
-      document.getElementById('upgrade-title').textContent=`Stage ${s.pendingLevel} clear — choose your upgrade`;
-      const rank=document.getElementById('upgrade-rank'); rank.textContent=res?res.rank:''; rank.dataset.rank=res?res.rank:'';
-      const stats=document.getElementById('upgrade-stats'); stats.textContent='';
-      if(res) for(const [label,value] of [['Time',`${Math.floor(res.secs/60)}:${String(res.secs%60).padStart(2,'0')}`],['Best combo',res.best],['KOs',res.kos],['Damage taken',res.taken],['Elites',res.elites],['Counters',res.counters]]) { const d=document.createElement('span'); d.textContent=`${label}: ${value}`; stats.appendChild(d); }
-      document.getElementById('upgrade-help').textContent=`Choose one upgrade for this run. Press 1–${s.offers.length}.`+(res&&res.rank==='S'?' S rank: bonus fourth card.':res&&res.rank==='A'?' A rank: a rare or better card is guaranteed.':'');
-      const cards=document.getElementById('upgrade-cards'); cards.textContent='';
-      s.offers.forEach((id,i)=>{const u=UPGRADES.find(x=>x.id===id),b=document.createElement('button'),title=document.createElement('b'),tier=document.createElement('i'),desc=document.createElement('span');b.dataset.upgrade=id;b.dataset.rarity=u.rarity;title.textContent=`${i+1}. ${u.name}`;tier.textContent=RARITY[u.rarity].label+((s.upgrades[id]||0)?` · owned ×${s.upgrades[id]}`:'');desc.textContent=u.text;b.append(title,tier,desc);b.onclick=()=>choose(id);cards.appendChild(b);});
-      cards.firstElementChild?.focus();
-    } ui.last=key;
-  }
-  const api={enabled,create,install,beforeFrame,afterFrame,request,choose,rate,UPGRADES,RARITY,
+  function updateUI() { if(ui&&machine&&!machine.arcadeCombat?.offers.length) { ui.cards=[]; ui.last=''; } }
+  const api={enabled,create,install,beforeFrame,afterFrame,request,choose,rate,UPGRADES,RARITY,drawOverlay,flash:feedback,
+    help(open){setHelp(!!open);},get helpOpen(){return !!ui?.help;},get selected(){return ui?ui.sel:0;},select(i){if(ui&&machine?.arcadeCombat?.offers.length)ui.sel=Math.max(0,Math.min(machine.arcadeCombat.offers.length-1,i|0));},get cards(){return ui?ui.cards.slice():[];},
     get drafting(){return !!machine?.arcadeCombat?.offers.length;},
-    get blocked(){return !!machine?.arcadeCombat?.offers.length||now()<stopUntil;},
+    get blocked(){return !!machine?.arcadeCombat?.offers.length||!!ui?.help||now()<stopUntil;},
     assertOnline(){if(enabled&&machine)throw new Error('Arcade Remix is offline. Open ?mods=0 for online play.');}};
   if(typeof module!=='undefined'&&module.exports)module.exports=api;else G.SIMPCOMBAT=api;
 })(typeof window!=='undefined'?window:globalThis);
