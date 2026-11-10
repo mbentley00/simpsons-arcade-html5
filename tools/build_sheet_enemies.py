@@ -78,6 +78,19 @@ CHARACTERS = {
         'knockdown_f01', 'knockdown_f04']},
     # one complete sheet (128x128 cells, feet at y = 122): idle, walk, the censer smash (wind-up, censer swung over his
     # head, smash with a burst of smoke), hurt, and the knockdown's airborne and lying poses
+    # Tapped Out conversions (tapped_out_conversions/<folder>: complete sheets, 160x128 cells, feet at y = 122). They are
+    # drawn larger than the cutouts (74-84 px standing), so each gets its own on-screen height next to the goons.
+    **{k: {'dir': 'tapped_out_conversions/' + folder, 'name': name, 'kind': 'cutout', 'cell': 'auto', 'height': height, 'frames': frames}
+       for k, (folder, name, height, frames) in {
+        'cc_mascot': ('cc_mascot', 'CC Mascot', 72, ['idle_f00', 'idle_f00', 'idle_f01', 'idle_f01', 'walk_f00', 'walk_f01', 'walk_f02', 'walk_f03',
+            'horn_blast_f04', 'horn_blast_f06', 'horn_blast_f07', 'horn_blast_f08', 'hurt_f02', 'hurt_f03', 'knockdown_f04', 'knockdown_f07']),
+        'director_homer': ('homer_director', 'Director Homer', 68, ['idle_f00', 'idle_f02', 'idle_f04', 'idle_f02', 'walk_f00', 'walk_f02', 'walk_f04', 'walk_f06',
+            'hat_swat_f04', 'hat_swat_f06', 'hat_swat_f07', 'hat_swat_f08', 'hurt_f02', 'hurt_f03', 'knockdown_f04', 'knockdown_f09']),
+        'robot_bear': ('robot_bear', 'Robot Bear', 70, ['idle_f00', 'idle_f01', 'idle_f02', 'idle_f01', 'walk_f00', 'walk_f02', 'walk_f04', 'walk_f06',
+            'claw_swipe_f03', 'claw_swipe_f04', 'claw_swipe_f05', 'claw_swipe_f06', 'hurt_f01', 'hurt_f02', 'knockdown_f04', 'knockdown_f09']),
+        'wiggum_stein': ('wiggum_stein', 'Wiggum Stein', 64, ['idle_f00', 'idle_f02', 'idle_f04', 'idle_f02', 'walk_f00', 'walk_f02', 'walk_f04', 'walk_f06',
+            'shoot_f02', 'shoot_f04', 'shoot_f05', 'shoot_f06', 'hurt_f01', 'hurt_f02', 'knockdown_f05', 'knockdown_f10']),
+    }.items()},
     'bishop': {'dir': 'bishop', 'name': 'Bishop', 'kind': 'cutout', 'cell': 'auto', 'frames': [
         'idle_f00', 'idle_f02', 'idle_f04', 'idle_f06',
         'walk_f00', 'walk_f02', 'walk_f04', 'walk_f06',
@@ -194,6 +207,7 @@ def main():
         cx, feet, L, R, U, D, k = layout(frames, cell, centre)
         atlas, anchor = place(frames, cx, feet, L, R, U, D, k, cell)
         source_scale = 1.0 if CHARACTERS[i]['kind'] == 'goon' else cutout_scale
+        if 'height' in CHARACTERS[i]: source_scale = CHARACTERS[i]['height'] / idle_height(frames)   # drawn at another scale: set its on-screen height
         scale = round(source_scale / k, 4)
         colours = palette(atlas)
         png = os.path.join(tmp, i + '.png'); atlas.save(png)

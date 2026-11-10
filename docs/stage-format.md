@@ -44,6 +44,8 @@ The nine PixelLab guest characters (`hoodie_girl`, `nanny`, `cat_lady`, `princes
 
 The Bishop (`web/custom/bishop.js`) comes from one complete sheet (`bishop`, 128x128 cells with idle, walk, censer and holy-water moves, a belly bump, hurt, knockdown and getting up). He idles and walks with his censer, attacks with the censer smash (wound up, whirled over his head on its chain, then smashed down in a burst of smoke), and falls with the knockdown's airborne and lying poses, in an automatically sized cell (up to 128x128) so nothing is shrunk.
 
+The Tapped Out conversions (`cc_mascot`, `director_homer`, `robot_bear`, `wiggum_stein`) come from complete sheets in `tapped_out_conversions/<folder>` (160x128 cells). Their attacks are the CC Mascot's horn blast, Director Homer's hat swat, the Robot Bear's claw swipe and Wiggum Stein's thrown shot; hurt frames are the ones without hit-effect overlays. They are drawn larger than the other cutouts (74-84 px standing), so each sets its own on-screen height (`height` in the character entry: 64-72 px).
+
 ## Friendly NPCs
 
 The **NPCs** tool saves a custom character row with `role: "npc"`, `npcName` (up to 40 characters) and `dialogue` (up to 200). It uses the same world coordinates, history and JSON export as enemy placement. NPC rows are removed from the virtual combat spawn stream entirely. They render as idle custom characters using camera-relative positions and private palettes, without allocating native enemy objects, hitboxes or wave counters. Blue labels identify them. `web/stage/npc.js` shows a proximity prompt and pauses the game for dialogue on E. Closing the dialogue restores gameplay. Bonus rounds and the ending retain their existing editor restrictions.
