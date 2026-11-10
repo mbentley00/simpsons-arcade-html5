@@ -38,6 +38,18 @@ def goon(folder, name):
         'r23_f01', 'r23_f02',
         'r27_f00', 'r27_f04']}
 
+def mixed(folder, name, idle, attack, hits):
+    """A PixelLab-animated guest (pixellab_cast2/<folder>: a ready stance plus three moves) joined to the same
+    character's cutout (cast2_local_model/<folder>) for walking, recoiling and falling. The idle is a taunt sampled
+    every other frame; the attack is four frames from wind-up to the hit (the frame reaching furthest forward)."""
+    pl, cut = 'pixellab_cast2/' + folder, 'cast2_local_model/' + folder
+    return {'dir': cut, 'name': name, 'kind': 'cutout', 'cell': 'auto', 'refs': {pl: 'ready_f00', cut: 'idle_f00'}, 'frames': [
+        *[f'{pl}/{idle}_f{i:02d}' for i in (0, 2, 4, 6)],
+        'walk_f00', 'walk_f02', 'walk_f04', 'walk_f06',
+        *[f'{pl}/{attack}_f{i:02d}' for i in hits],
+        'hurt_f00', 'hurt_f01',
+        'knockdown_f01', 'knockdown_f04']}
+
 CHARACTERS = {
     'fat_tony': goon('fat_tony', 'Fat Tony'),
     'rich_texan': goon('rich_texan', 'Rich Texan'),
@@ -56,6 +68,17 @@ CHARACTERS = {
         'pixellab_jasper/overhead_whack_f02', 'pixellab_jasper/overhead_whack_f04', 'pixellab_jasper/overhead_whack_f05', 'pixellab_jasper/overhead_whack_f06',
         'hurt_f00', 'hurt_f01',
         'knockdown_f01', 'knockdown_f04']},
+    **{k: mixed(*v) for k, v in {
+        'hoodie_girl': ('14_hoodie_girl', 'Hoodie Girl', 'peace_wink', 'hop_kick', (3, 5, 7, 9)),
+        'nanny': ('15_nanny', 'Nanny', 'curtsy', 'hat_boomerang', (4, 5, 7, 9)),
+        'cat_lady': ('16_cat_lady', 'Cat Lady', 'rant', 'cat_toss', (4, 6, 7, 8)),
+        'princess': ('17_princess', 'Princess', 'wave_curtsy', 'glove_slap', (5, 7, 9, 10)),
+        'jacket_artist': ('18_jacket_artist', 'Jacket Artist', 'belly_laugh', 'figure_throw', (4, 6, 7, 8)),
+        'purple_suit': ('19_purple_suit', 'Purple Suit', 'angry_swig', 'bottle_splash', (5, 7, 9, 11)),
+        'accordion_guy': ('20_accordion_guy', 'Accordion Guy', 'play', 'accordion_blast', (4, 7, 8, 10)),
+        'blonde_woman': ('21_blonde_woman', 'Blonde Woman', 'hair_flick', 'heel_kick', (4, 6, 7, 9)),
+        'glasses_woman': ('22_glasses_woman', 'Glasses Woman', 'adjust_glasses', 'two_hand_shove', (4, 6, 7, 9)),
+    }.items()},
 }
 FALL = (14, 15)
 SHARED_FEET = (120, 180)   # where multi-folder characters' feet are put on their shared 240x200 canvas
@@ -147,7 +170,11 @@ def main():
     cutout_scale = idle_height(loaded['fat_tony']) / cut[len(cut) // 2]
     tmp = tempfile.mkdtemp()
     for i in ids:
-        frames = loaded[i]; cell = CHARACTERS[i].get('cell', CELL); cx, feet, L, R, U, D, k = layout(frames, cell, SHARED_FEET if 'refs' in CHARACTERS[i] else None)
+        frames = loaded[i]; cell = CHARACTERS[i].get('cell', CELL); centre = SHARED_FEET if 'refs' in CHARACTERS[i] else None
+        if cell == 'auto':   # the smallest 16-px multiple (at least 64x96) that holds every standing pose 1:1
+            _, _, L, R, U, D, _ = layout(frames, (4096, 4096), centre); up16 = lambda v: -(-int(v) // 16) * 16
+            cell = (max(64, up16(L + R + 4)), max(96, up16(U + D + 4)))
+        cx, feet, L, R, U, D, k = layout(frames, cell, centre)
         atlas, anchor = place(frames, cx, feet, L, R, U, D, k, cell)
         source_scale = 1.0 if CHARACTERS[i]['kind'] == 'goon' else cutout_scale
         scale = round(source_scale / k, 4)

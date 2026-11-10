@@ -8,7 +8,8 @@ vm.runInNewContext(fs.readFileSync(require.resolve('../web/custom/slugger.js'), 
 vm.runInNewContext(fs.readFileSync(require.resolve('../web/custom/moleman.js'), 'utf8'), ctx);
 vm.runInNewContext(fs.readFileSync(require.resolve('../web/custom/comic_book_guy.js'), 'utf8'), ctx);
 // Converted from the SimpsonsSprites sheets by tools/build_sheet_enemies.py
-const SHEET_ENEMIES = { fat_tony: 'Fat Tony', rich_texan: 'Rich Texan', burns: 'Mr. Burns', moe: 'Moe', wiseguy: 'Wiseguy', mob_boss: 'Mob Boss', jasper: 'Jasper' };
+const SHEET_ENEMIES = { fat_tony: 'Fat Tony', rich_texan: 'Rich Texan', burns: 'Mr. Burns', moe: 'Moe', wiseguy: 'Wiseguy', mob_boss: 'Mob Boss', jasper: 'Jasper',
+  hoodie_girl: 'Hoodie Girl', nanny: 'Nanny', cat_lady: 'Cat Lady', princess: 'Princess', jacket_artist: 'Jacket Artist', purple_suit: 'Purple Suit', accordion_guy: 'Accordion Guy', blonde_woman: 'Blonde Woman', glasses_woman: 'Glasses Woman' };
 for (const id of Object.keys(SHEET_ENEMIES)) vm.runInNewContext(fs.readFileSync(require.resolve('../web/custom/' + id + '.js'), 'utf8'), ctx);
 // custom palettes are given 16-pen slots from 4096 in sorted asset-id order (enemies.js install)
 const inSlot = (p, id) => { const b = 4096 + Object.keys(ctx.window.SIMPENEMY_ASSETS).sort().indexOf(id) * 16; return p >= b && p < b + 16; };
