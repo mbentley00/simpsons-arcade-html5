@@ -116,14 +116,17 @@
   // ---------- PeerJS cloud ----------
   async function loadPeerJS() {
     if (G.Peer) return;
-    await new Promise((ok, ko) => { const s = document.createElement('script'); s.src = 'https://unpkg.com/peerjs@1.5.4/dist/peerjs.min.js'; s.onload = ok; s.onerror = () => ko(new Error('PeerJS não carregou')); document.head.appendChild(s); });
+    await new Promise((ok, ko) => { const s = document.createElement('script'); s.src = 'https://unpkg.com/peerjs@1.5.4/dist/peerjs.min.js'; s.onload = ok; s.onerror = () => ko(new Error('Could not load PeerJS (unpkg.com)')); document.head.appendChild(s); });
   }
   async function openPeerJS(o) {
     await loadPeerJS();
     const pid = 'simpsons-' + o.room.toLowerCase();
     const peer = new G.Peer(o.role === 'host' ? pid : undefined, { config: { iceServers: o.ice || ICE }, debug: 1 });
-    await new Promise((ok, ko) => { peer.on('open', ok); peer.on('error', ko); });
-    const t = { onlink: null, kind: 'peerjs', id: peer.id, close() { peer.destroy(); } };
+    // the broker is shared: a room code already in use rejects with type 'unavailable-id' (the host picks another code)
+    await new Promise((ok, ko) => { peer.on('open', ok); peer.on('error', e => { peer.destroy(); ko(Object.assign(new Error(e.message || String(e)), { type: e.type })); }); });
+    const t = { onlink: null, onfail: null, kind: 'peerjs', id: peer.id, close() { peer.destroy(); } };
+    // a guest asking for a room nobody is hosting gets 'peer-unavailable' from the broker straight away
+    peer.on('error', e => { if (e && e.type === 'peer-unavailable' && t.onfail) t.onfail(e); });
     const pairUp = (cu, cr) => {
       const link = LINK.makeLink(s => cu.open && cu.send(s), s => cr.open && cr.send(s), () => { cu.close(); cr.close(); }, o.sim);
       cu.on('data', d => link.recv(d)); cr.on('data', d => link.recv(d)); cr.on('close', () => link.onclose && link.onclose());

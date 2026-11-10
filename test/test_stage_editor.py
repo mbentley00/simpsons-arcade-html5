@@ -61,9 +61,14 @@ with sync_playwright() as p:
     g.on('console', lambda m: m.type == 'error' and errs.append(m.text + ' ' + str(m.location.get('url')))); g.on('pageerror', lambda e: errs.append(str(e)))
     g.goto(f'http://127.0.0.1:{port}/index.html?scene=4&pause=1')
     g.evaluate('SIMPG.ready')
-    for action in ['host()', 'join("ABCD")']:
-        rejection = g.evaluate('async () => { try { await SSRNETPLAY.%s; return "allowed"; } catch (e) { return e.message; } }' % action)
-        check('mods=0' in rejection, action + ' rejects local modifications before connecting')
+    # online rooms run the original game: from an edited page, Create room reopens it with ?mods=0 (and then hosts), and
+    # joining by code opens the invite link (which never loads edits); checked in a throwaway page of the same profile
+    check(g.evaluate('SSRNETPLAY.modded()'), 'a page with stage edits counts as modded for online play')
+    for action, want in [('host()', ['mods=0', 'host=1']), ('join("ABCD")', ['sala=ABCD'])]:
+        t = ctx.new_page(); t.goto(f'http://127.0.0.1:{port}/index.html?scene=4&pause=1'); t.evaluate('SIMPG.ready')
+        with t.expect_navigation(): t.evaluate('() => { SSRNETPLAY.%s.catch(() => {}); }' % action)
+        check(all(w in t.url for w in want), action + ' reopens the original game before connecting: ' + t.url)
+        t.close()
     # coin at 900, start at 1020 (as test/input/coin_start_walk.txt), then let the stage load
     # inputs go through web/input.js (keyboard), which overwrites board.inputs every frame
     def run_to(f): g.evaluate('(f => { while (SIMPG.frame < f) SIMPG.run(1); })(%d)' % f)

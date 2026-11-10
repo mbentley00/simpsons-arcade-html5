@@ -55,7 +55,7 @@
   // nicknames per slot (host: own name + links; guest: from the host's 'who')
   P.names = function () {
     if (this.role !== 'host') return this.nameList || ['', '', '', ''];
-    const n = [this.name || 'Jogador 1', '', '', '']; for (const l of this.links) if (l.slot > 0) n[l.slot] = l.name || 'Jogador ' + (l.slot + 1); return n;
+    const P = (typeof navigator !== 'undefined' && /^pt/i.test(navigator.language || '')) ? 'Jogador ' : 'Player ', n = [this.name || P + 1, '', '', '']; for (const l of this.links) if (l.slot > 0) n[l.slot] = l.name || P + (l.slot + 1); return n;
   };
   P.setName = function (x) { this.name = cleanNick(x); if (this.role === 'host') this.sendWho(); else if (this.links[0]) this.links[0].link.send({ t: 'nick', name: this.name }, true); };
   P.spectators = function () { return this.role === 'host' ? this.links.filter(l => l.spec).map(l => l.name) : this.specList; };

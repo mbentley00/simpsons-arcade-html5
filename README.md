@@ -106,7 +106,7 @@ These gameplay modifications are offline. Use `?mods=0` for original behavior an
 
 Open `editor.html` on the same server to paint the two scrolling background layers, save edits in this browser, and export or import edits as JSON. **Play this stage** automatically starts a player in the selected stage and skips displaying startup and introductions. The first launch prepares the game in the background; subsequent launches restore a private browser checkpoint. Editing the stage invalidates that checkpoint. Background edits change scenery while collision stays unchanged. Shared map data can make an edit appear in several places.
 
-Select **Enemies** to add Slugger, Rivet, Duffman, Hans Moleman, Comic Book Guy, Fat Tony and his crew (Wiseguy, Mob Boss), the Rich Texan, Mr. Burns, Moe and paddle-swinging Jasper in Stonecutter robes, nine PixelLab-animated guest characters (Hoodie Girl, Nanny, Cat Lady, Princess, Jacket Artist, Purple Suit, Accordion Guy, Blonde Woman, Glasses Woman), or a standard enemy, drag spawn markers, or remove basic enemies. Slugger is a man inside a giant baseball mascot costume; Rivet is an original maintenance goon in a navy cap, orange vest and teal coveralls. Custom characters have sixteen animation frames, individual 16-colour palettes and a 48×72 display size (the six converted from sprite sheets by `tools/build_sheet_enemies.py` stand at arcade goon height instead). They use the original standard enemy's combat behavior. Enemy edits support undo/redo and export/import. Stage scripts and other object records stay in the spawn stream. Use Main for placement; markers describe spawn coordinates, and the original game decides when enemies enter the screen.
+Select **Enemies** to add Slugger, Rivet, Duffman, Hans Moleman, Comic Book Guy, Fat Tony and his crew (Wiseguy, Mob Boss), the Rich Texan, Mr. Burns, Moe and paddle-swinging Jasper in Stonecutter robes, nine PixelLab-animated guest characters (Hoodie Girl, Nanny, Cat Lady, Princess, Jacket Artist, Purple Suit, Accordion Guy, Blonde Woman, Glasses Woman), a censer-swinging Bishop, or a standard enemy, drag spawn markers, or remove basic enemies. Slugger is a man inside a giant baseball mascot costume; Rivet is an original maintenance goon in a navy cap, orange vest and teal coveralls. Custom characters have sixteen animation frames, individual 16-colour palettes and a 48×72 display size (the six converted from sprite sheets by `tools/build_sheet_enemies.py` stand at arcade goon height instead). They use the original standard enemy's combat behavior. Enemy edits support undo/redo and export/import. Stage scripts and other object records stay in the spawn stream. Use Main for placement; markers describe spawn coordinates, and the original game decides when enemies enter the screen.
 
 The Enemies view also shows the stage's own characters and props (goons, the dog, Principal Skinner, the kid, doors, fence panels, street lamps and more) drawn with their real in-game sprites, which the editor renders from your ROM. Names appear when you hover over or select a marker. Drag one to move it, delete it, or pick one of the stage's object types under **Place** to add another. **Show scripts & triggers** adds grey markers for event records, such as the police car arriving at the fire station. Those records cannot be moved, but **Duplicate group to X** copies an event together with the records next to it, for example a fence and the goons that break through it (experimental). Objects that were not captured show as plain boxes labelled by object number.
 
@@ -137,23 +137,31 @@ Events are built from a fixed set of building blocks: objects that roll or fly a
 - **Without a key**, a built-in reader picks the blocks from common words (rain, roll, explosion, earthquake, lights out, heal, donuts, boulders, ...).
 - **With a Claude API key** (open "Claude API key" under the box), Claude reads the description and builds the event. The key is kept in this browser's storage and is sent only to the Claude API, straight from the page. Each event costs one request to `claude-opus-5-5`.
 
-Use `?mods=0` for online play with the original ROM. The editor's local edits and scene selection are disabled on room invite links; a modified offline game asks you to open a fresh unmodified page before creating or joining a room. See [the format and usage notes](docs/stage-format.md) for limitations and checks.
+Online rooms play the original game. The editor's local edits and scene selection are off on room invite links, and creating a room from a page with them (or with the Arcade Remix) reopens that page as the original game first. See [the format and usage notes](docs/stage-format.md) for limitations and checks.
 
 ## Playing online
 
-Create a room from the panel. The invite is this page's own address plus `?sala=` and a short code. Each person opens that link in a browser, then uses coin and start.
+Press **F7** (or **Online play** at the bottom right) and choose **Create room**. If the page is running the Arcade Remix, custom enemies, edited stages or a player outfit, it reopens as the original game and then opens the room, because every player must run the same game. The invite is this page's own address plus `?sala=` and a short code; **Copy link** copies it. Each person opens that link in a browser (it always loads the original game), then uses coin and start. A friend can also type the code into **Join**. A wrong or closed code is reported at once.
 
 In an online room, that browser's controls belong to that browser's player. Four people need four browsers, not four seats at one keyboard.
 
-Signaling (the room list, the offer, the answer, and ICE) uses:
+Connecting players (signaling) uses the free public PeerJS broker by default, so no server of your own is needed; the game itself then runs peer to peer over WebRTC, with public STUN servers to find a direct path. The `signal.php` host this tree used to point at (`https://games4me.alwaysdata.net/simpsons/signal.php`) no longer answers. Without a relay (TURN) server, two players behind very strict networks (some mobile carriers, company or school networks) may not be able to connect; home Wi-Fi almost always works.
 
-`https://games4me.alwaysdata.net/simpsons/signal.php`
+With your own copy of `signal.php` (`?signal=URL`), you also get the public room list and relay credentials: when a room is opened, the page asks that server for short-lived TURN credentials (`?a=ice`). No relay password is stored in the browser. The static Open Relay credential that an earlier copy of `web/net/transport.js` embedded is not in this tree, the same choice as the public Cadillacs player, which also dropped its embedded relay secret. If the request fails, the page keeps the public STUN servers and does not substitute another relay account. If a direct connection does not come up and TURN was returned, the guest tries once more through the relay only.
 
-When a room is opened, the page asks that server for short-lived TURN credentials (`?a=ice`). No relay password is stored in the browser. The static Open Relay credential that an earlier copy of `web/net/transport.js` embedded is not in this tree, the same choice as the public Cadillacs player, which also dropped its embedded relay secret. If the request fails, the page keeps the public STUN servers and does not substitute another relay account. If a direct connection does not come up and TURN was returned, the guest tries once more through the relay only.
-
-`?signal=` points at another copy of `signal.php`. `?net=peerjs` uses the PeerJS broker instead. `?turn=` is a local test override and is not copied into the invite. Do not put a relay password in a link you share.
+`?signal=` points at a copy of `signal.php` (and is copied into the invite). `?net=php` uses the old default address. `?turn=` is a local test override and is not copied into the invite. Do not put a relay password in a link you share.
 
 `web/net/signal.php` is the signaling program for someone who hosts their own copy. This repository does not deploy it. A real host copies `web/net/turn_config.example.php` to `turn_config.php` on that server and fills it there. The filled file is gitignored. Do not commit it, and do not ship it with the page. The stats view (`?a=stats&k=`) reads `stats_key` from that same file; the key is not in this repository.
+
+## Performance
+
+The emulation is cycle-exact: the K053260 sound chip's update timer cuts every frame into about 3,800 slices of about ten CPU cycles, as in MAME. Three changes keep that affordable without changing a single emulated bit (each was checked against full-machine state hashes over 3,000 frames of play, and the renderer pixel for pixel):
+
+- The Z80 sound CPU core is split into one small function per opcode (`tools/z80_split.py`, run on the output of `tools/z80_transpile.py`). As one ~800 KB function it was never optimized by the browser and every call paid for a huge frame; it was most of the emulation time.
+- The scheduler (`web/sim/sched.js`) does its per-slice cycle arithmetic on plain numbers whenever the values fit exactly, and reuses BigInt products.
+- The tile layers are drawn a tile row at a time instead of one function call per pixel (`web/sim/video.js`; custom level art keeps the per-pixel path).
+
+When the computer still cannot keep up, the page catches up at most 4 frames per screen refresh and draws only the last of them, so a slow machine runs the game somewhat slower but stays smooth, instead of freezing and jumping ahead. In headless Chromium on a desktop PC, emulation went from about 20 ms to about 7 ms per frame (full speed is 16.9 ms); with the CPU throttled 4x the game went from 6 to 21 frames per second.
 
 ## A code-only package
 
@@ -180,7 +188,7 @@ Simpsons checks that need your zip, and in several cases a MAME log you capture 
 - `test/ym_check.js` — `web/sim/ym2151.js` against a ymfm log you supply.
 - `test/state_check.js` — save, load, and rollback on the board.
 - `test/net_check.js` — in-process rollback, spectators, chat, nicknames.
-- `test/browser_check.py`, `test/test_coin_hint.py`, `test/test_gfx_modes.py`, `test/test_netplay.py`, `test/test_room_list.py`, `test/test_signal_list.sh`, `test/test_relay.py` — page checks. The relay script expects a local `turnserver` unless `SIGNAL` points at a host you run.
+- `test/browser_check.py`, `test/test_coin_hint.py`, `test/test_gfx_modes.py`, `test/test_netplay.py`, `test/test_netplay_peerjs.py` (the real flow over the public PeerJS broker: Create room from a modded page, invite link, no desync), `test/test_room_list.py`, `test/test_signal_list.sh`, `test/test_relay.py` — page checks. The relay script expects a local `turnserver` unless `SIGNAL` points at a host you run.
 - `test/test_stage_editor.py` — editor painting, persistence, imports, online guards, and starting an edited stage in Chromium.
 - `test/test_playback_controls.py` — pause/resume, audio muting and persistence, keyboard shortcuts, and the online pause guard.
 - `test/test_enemy_editor.py`, `test/enemy_check.js` — enemy editing and custom sprite rendering; the Node check also needs `unzip` on PATH.

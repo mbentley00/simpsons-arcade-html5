@@ -7,7 +7,7 @@ Checks that all state hashes reported by the guests match the host's (no desync,
 and prints rollback stats and CPU cost.
 Spectators (--spectators N): after all players, N more pages open the link, get "Sala cheia" + Assistir/Sair, click
 Assistir; at --leave-at the last player closes its page and spectator 1 presses coin (5) to take the slot and play.
-Nicknames: every page has one in localStorage (one with HTML/control chars, one empty -> "Jogador N"); all peers must
+Nicknames: every page has one in localStorage (one with HTML/control chars, one empty -> "Player N" (or "Jogador N" in Portuguese)); all peers must
 agree. Usage: python3 test/test_netplay.py [--players 4] [--seconds 300] [--netsim 60,20,5] [--last-join 60] [--spectators 2]"""
 import argparse, os, subprocess, time, json, socket, sys
 from playwright.sync_api import sync_playwright
@@ -44,7 +44,7 @@ with sync_playwright() as p:
     pages = []
     for i, b in enumerate(browsers):
         pg = b.new_page(); pg.add_init_script(f'try {{ localStorage.setItem("simpsons_nick", {json.dumps(NICKS[i])}) }} catch (e) {{}}'); pg.on('pageerror', lambda e, i=i: fails.append(f'page {i}: {e}')); pages.append(pg)
-    h = pages[0]; boot(h, f'{BASE}?signal={SIG}'); h.evaluate(BOT, 1)
+    h = pages[0]; boot(h, f'{BASE}?signal={SIG}&mods=0'); h.evaluate(BOT, 1)   # online rooms run the original game
     time.sleep(5)  # host plays alone for a bit (attract / coin)
     h.evaluate('SSRNETPLAY.host()'); room = h.evaluate('SSRNETPLAY.state.room'); print('room', room, 'link', h.evaluate('SSRNETPLAY.link()'))
     chat_at = a.chat_at if a.chat_at >= 0 else a.last_join + 12; chat_done = False; chat_res = None
@@ -118,7 +118,7 @@ for i, s in enumerate(st):
     if i and s['resyncs'] != 1: print('peer', i, 'resynced', s['resyncs'], 'times (1 = the join)'); ok = False
 if host['desyncs']: print('host saw', host['desyncs'], 'desyncs'); ok = False
 print('nicks', host['names'])
-if host['names'][0] != 'Saulo' or any(len(n) > 12 or '<' in n for n in host['names']) or (a.players > 2 and host['names'][2] != 'Jogador 3'): print('bad nicks', host['names']); ok = False
+if host['names'][0] != 'Saulo' or any(len(n) > 12 or '<' in n for n in host['names']) or (a.players > 2 and host['names'][2] not in ('Jogador 3', 'Player 3')): print('bad nicks', host['names']); ok = False
 if a.spectators:
     sp = [x for x in host['peers'] if x['spec']]; print('spectator links', sp, 'spec hash checks', host['specHashChecks'], 'spec desyncs', host['specDesyncs'])
     if spec_state < 4: print('spectator flow stopped at state', spec_state); ok = False

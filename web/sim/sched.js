@@ -5,7 +5,10 @@
 // "modified during callback" rule, and device_input event queues (set_input_line -> synchronize(empty_event_queue)).
 'use strict';
 (function (G) {
-const NEVER = 1n << 120n, ASPS = 1000000000000000000n;
+const NEVER = 1n << 120n, ASPS = 1000000000000000000n, EXACT = 1n << 53n, MEMO = 4096;
+// Speed: the sound chip's update timer splits every frame into ~3800 slices of ~10 cycles, so the per-slice BigInt work
+// dominates. Both helpers below give exactly the BigInt results: small products are computed once and reused, and the
+// cycle conversion runs on Numbers when the attosecond delta is below 2^53 (exact there; see timeslice).
 const CLEAR = 0, ASSERT = 1, HOLD = 2;
 class Timer {
   constructor(s, name, cb, temporary) {
@@ -36,11 +39,18 @@ class Scheduler {
     this.quantum = 16666666666666666n; // maximum_quantum(1/60 s)
     this.log = null; // optional function(line)
   }
-  addExec(e) { e.localtime = 0n; e.total = 0; e.running = 0; e.stolen = 0; this.execs.push(e); return e; }
+  addExec(e) {
+    e.localtime = 0n; e.total = 0; e.running = 0; e.stolen = 0;
+    e.apcN = new Array(MEMO); e.cycN = new Array(MEMO); e.shiftN = 2 ** Number(e.shift); e.divN = Number(e.div);
+    this.execs.push(e); return e;
+  }
+  // n * e.apc and n * e.cyc as BigInt, with the products of small n kept
+  apcTimes(e, n) { if (n >= 0 && n < MEMO) { const t = e.apcN[n]; return t !== undefined ? t : (e.apcN[n] = BigInt(n) * e.apc); } return BigInt(n) * e.apc; }
+  cycTimes(e, n) { if (n >= 0 && n < MEMO) { const t = e.cycN[n]; return t !== undefined ? t : (e.cycN[n] = BigInt(n) * e.cyc); } return BigInt(n) * e.cyc; }
   time() {
     if (this.cbTimer) return this.cbExpire;
     const e = this.executing;
-    if (e) return e.localtime + BigInt(e.running - e.cpu.icount) * e.cyc;
+    if (e) return e.localtime + this.cycTimes(e, e.running - e.cpu.icount);
     return this.basetime;
   }
   totalCycles(e) { return this.executing === e ? e.total + e.running - e.cpu.icount : e.total; }
@@ -71,13 +81,15 @@ class Scheduler {
         if (e.suspended) continue;
         const delta = target - e.localtime;
         if (delta >= e.apc) {
-          let ran = Number((delta >> e.shift) / e.div);
+          // floor(floor(delta / 2^shift) / div): exact on Numbers below 2^53 (the quotient is small, so a remainder of
+          // at least 1/div is far larger than the rounding step and floor never crosses an integer wrongly)
+          let ran = delta < EXACT ? Math.floor(Math.floor(Number(delta) / e.shiftN) / e.divN) : Number((delta >> e.shift) / e.div);
           e.running = ran; e.stolen = 0; this.executing = e;
           e.cpu.run(ran);
           ran = ran - e.cpu.icount - e.stolen;   // MAME: ran -= *icountptr; ran -= m_cycles_stolen
           e.total += ran; e.cpu.total = e.total;
           if (log) log(`X ${e.name} ${e.running + e.stolen} ${ran} ${e.total}`);
-          e.localtime += BigInt(ran) * e.apc;
+          e.localtime += this.apcTimes(e, ran);
           if (e.localtime < target) target = e.localtime > this.basetime ? e.localtime : this.basetime;
         }
       }

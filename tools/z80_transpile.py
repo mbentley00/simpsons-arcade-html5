@@ -1,7 +1,8 @@
 #!/usr/bin/env python3
 """Transpile MAME's generated Z80 core (build/generated/emu/cpu/z80/z80.hxx, slow re-enter section)
 into a JS function body. Only the code structure is MAME's (BSD-3-Clause, Juergen Buchmueller, Andrei I. Holub).
-Usage: z80_transpile.py z80.hxx > web/sim/z80m_core.js"""
+Usage: z80_transpile.py z80.hxx > z80m_core.unsplit.js && python tools/z80_split.py z80m_core.unsplit.js > web/sim/z80m_core.js
+(the split pass turns the one huge runCore into one function per opcode so the browser optimizes it; see z80_split.py)"""
 import re, sys
 src = open(sys.argv[1]).read().split('\n')
 end = next(i for i, l in enumerate(src) if l.startswith('} // end: slow'))

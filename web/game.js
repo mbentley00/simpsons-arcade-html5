@@ -10,7 +10,7 @@
   // base: the clean game frame. px32 = base plus the Arcade Remix overlay (web/combat.js), redrawn every display frame
   // so the in-game HUD, callouts and draft animate even while the board is held. Hashes/pixels() read the clean frame.
   const base = new Uint32Array(W * H); let overlaid = false;
-  let paused = false, shown = -1, m = null, v = null, STEP = 0, acc = 0, last = 0, fresh = false, stats = { steps: 0, ms: 0 };
+  let paused = false, shown = -1, m = null, v = null, STEP = 0, acc = 0, last = 0, fresh = false, stats = { steps: 0, ms: 0 }, skipRender = false, flushFrame = null;
   let muted = q.get('mute') === '1';
   if (!q.has('mute')) try { muted = localStorage.getItem('simpsons.audio.muted') === '1'; } catch (e) { /* optional preference */ }
   const controlsChanged = () => { if (G.SIMPG && SIMPG.onControlsChange) SIMPG.onControlsChange(); };
@@ -41,6 +41,8 @@
     if ((G.SIMPCOMBAT && SIMPCOMBAT.blocked) || (G.SIMPNPC && SIMPNPC.blocked)) return;
     const t0=performance.now(); let ran=0;
     for(let i=0;i<n;i++) {
+      // catching up several frames in one tick: only the last one is drawn (the picture of the others is never shown)
+      skipRender = i < n - 1;
       if(G.SIMPI) SIMPI.apply(m);
       if(G.SIMPCOMBAT) SIMPCOMBAT.beforeFrame(m);
       if(G.SIMPEVENTS) SIMPEVENTS.beforeFrame(m);
@@ -51,7 +53,7 @@
       audioOut(m.drainAudio()); if(G.SSRIN&&SSRIN.consumeLatch) SSRIN.consumeLatch(); ran++;
       if(G.SIMPCOMBAT&&SIMPCOMBAT.blocked) break;
     }
-    stats.steps+=ran; stats.ms+=performance.now()-t0;
+    skipRender = false; if (ran && flushFrame) flushFrame(); stats.steps+=ran; stats.ms+=performance.now()-t0;
   }
   // ---- netplay (net/ui.js): the rollback session owns the stepping; it calls netStep(fi, f) for every (re)simulated
   // frame. Per-frame rendering is off while online (resimulated frames are never drawn); after each tick the current
@@ -70,8 +72,12 @@
     if (n) { v.render(); blit(v.toRGB()); fresh = true; shown = m.frame; if (G.SIMPI) SIMPI.onFrame(m); }
     stats.steps += n; stats.ms += performance.now() - t0;
   }
+  // At most CATCHUP emulated frames per display frame. A computer too slow for full speed then runs the game a little
+  // slower but keeps drawing every tick, instead of stalling for up to 15 frames (250 ms) at a time and jumping ahead.
+  const CATCHUP = 4;
   function tick(t) {
     acc += Math.min(250, t - (last || t)); last = t;
+    if (!(net && net.active())) acc = Math.min(acc, STEP * CATCHUP);
     let n = 0; while (acc >= STEP) { acc -= STEP; n++; }
     if (paused) n = 0;
     if (net && net.active()) netTick(n); else if (n) run(n);
@@ -107,7 +113,8 @@
     if (G.SIMPNPC) SIMPNPC.install(m);
     // MAME (VIDEO_UPDATE_AFTER_VBLANK) shows frame n's bitmap at the next vblank end with the palette at that time
     let pend = false;
-    m.onFrame = () => { if (net && net.active()) return; if (pend) { blit(v.toRGB()); fresh = true; shown = m.frame - 1; } v.render(); pend = true; if (G.SIMPI) SIMPI.onFrame(m); };
+    flushFrame = () => { if (!pend) { v.render(); pend = true; } }; // the loop stopped early on a frame that skipped drawing
+    m.onFrame = () => { if (net && net.active()) return; if (pend) { blit(v.toRGB()); fresh = true; shown = m.frame - 1; } if (skipRender) pend = false; else { v.render(); pend = true; } if (G.SIMPI) SIMPI.onFrame(m); };
     addEventListener('resize', () => G.SSRGFX && SSRGFX.layout()); if (G.SSRGFX) SSRGFX.layout();
     if (launched) { v.render(); blit(v.toRGB()); fresh = true; shown = m.frame; draw(); }
     if (!PAUSE) requestAnimationFrame(tick);

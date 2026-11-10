@@ -58,8 +58,30 @@
       const pix = this.tiles[(code << 6) | (r << 3) | (tx & 7)];
       return pix ? ((cb[layer] + ((color & 0xc0) >> 6)) << 4) | pix : -1;
     }
+    // One screen row of a tile layer, a tile at a time (same pixels as tilePix): tx = (tx0 + sx) & 511 across the row;
+    // ty is the row's tile y, or for column scroll sy + colOff[tile column]. Look-ups are done once per 8-pixel tile.
+    rowFast(layer, cb, prio, sy, tx0, ty, colOff) {
+      const b = this.b, v = b.vram, o = layer * 0x800, tiles = this.tiles, bmp = this.bmp, pr = this.pri, crb = b.crb;
+      const remap = !(b.addrmap & 0x40), tflip = b.tileflip & 4, cbl = cb[layer], row = sy * W;
+      for (let sx = 0; sx < W;) {
+        const tx = (tx0 + sx) & 511, tcol = tx >> 3, y = (colOff ? sy + colOff[tcol] : ty) & 255, ti = ((y >> 3) << 6) | tcol;
+        let color = v[o + ti]; const code0 = v[0x2000 + o + ti] + 256 * v[0x4000 + o + ti];
+        let bank = crb[(color & 0x0c) >> 2];
+        if (remap) color = (color & 0xf3) | ((bank & 3) << 2);
+        bank >>= 2;
+        const code = (code0 | ((color & 0x3f) << 8) | (bank << 14)) & 0x7fff;
+        let r = y & 7; if ((color & 2) && tflip) r = 7 - r;
+        const base = (code << 6) | (r << 3), pal = (cbl + ((color & 0xc0) >> 6)) << 4;
+        const first = tx & 7, n = Math.min(8 - first, W - sx);
+        for (let k = 0; k < n; k++) { const pix = tiles[base + first + k]; if (pix) { const i = row + sx + k; bmp[i] = pal | pix; pr[i] |= prio; } }
+        sx += n;
+      }
+    }
     drawLayer(layer, cb, prio) {
       const b = this.b, bmp = this.bmp, pr = this.pri;
+      // Speed: the per-pixel path below calls tilePix ~215,000 times a frame. Unless tilePix has been replaced (custom
+      // level art, web/stage/tileset.js), draw a tile at a time instead; the result is identical.
+      if (this.tilePix === Video.prototype.tilePix) return this.drawLayerFast(layer, cb, prio);
       const put = (sx, sy, tx, ty) => { const c = this.tilePix(layer, cb, tx & 511, ty & 255); if (c >= 0) { const i = sy * W + sx; bmp[i] = c; pr[i] |= prio; } };
       if (layer === 0) { for (let sy = Y0; sy < Y0 + H; sy++) for (let sx = 0; sx < W; sx++) put(sx, sy, sx + 96, sy); return; }
       const m = layer === 2 ? 0x2000 : 0, sy_ = b.vram.subarray(0x1800 | m), sx_ = b.vram.subarray(0x1a00 | m);
@@ -78,6 +100,26 @@
         this.mixed = (this.mixed || 0) + 1;
         const xs = sx_[0] + 256 * sx_[1];
         for (let sy = Y0; sy < Y0 + H; sy++) for (let sx = 0; sx < W; sx++) { const tx = (sx + 90 + xs) & 511; put(sx, sy, tx, sy + sy_[tx >> 3]); }
+      }
+    }
+    drawLayerFast(layer, cb, prio) {
+      const b = this.b;
+      if (layer === 0) { for (let sy = Y0; sy < Y0 + H; sy++) this.rowFast(0, cb, prio, sy, 96, sy, null); return; }
+      const m = layer === 2 ? 0x2000 : 0, sy_ = b.vram.subarray(0x1800 | m), sx_ = b.vram.subarray(0x1a00 | m);
+      const ctrl = (b.scrollctrl >> ((layer - 1) * 3)) & 7, rows = [1, 1, 32, 256][ctrl & 3], cols = ctrl & 4 ? 64 : 1;
+      if (cols === 1) {
+        const ys = sy_[12], rs = new Int32Array(256);
+        if (rows === 1) rs.fill(sx_[0] + 256 * sx_[1]);
+        else { const mk = rows === 256 ? 0xff : 0xf8; for (let o = 0; o < 256; o++) rs[(o + ys) & 0xff] = sx_[2 * (o & mk)] + 256 * sx_[2 * (o & mk) + 1]; }
+        for (let sy = Y0; sy < Y0 + H; sy++) { const ty = (sy + ys) & 255; this.rowFast(layer, cb, prio, sy, 90 + rs[ty], ty, null); }
+      } else if (rows === 1) {
+        const xs = sx_[0] + 256 * sx_[1], cs = new Int32Array(64), x8 = Math.trunc(xs / 8);
+        for (let o = 0; o < 64; o++) cs[(o + x8) & 0x3f] = sy_[o];
+        for (let sy = Y0; sy < Y0 + H; sy++) this.rowFast(layer, cb, prio, sy, 90 + xs, 0, cs);
+      } else {
+        this.mixed = (this.mixed || 0) + 1;
+        const xs = sx_[0] + 256 * sx_[1];
+        for (let sy = Y0; sy < Y0 + H; sy++) this.rowFast(layer, cb, prio, sy, 90 + xs, 0, sy_);
       }
     }
     drawSprites(colorbase, lp) {

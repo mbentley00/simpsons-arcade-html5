@@ -79,7 +79,7 @@ const timer = setInterval(() => {
     // nicknames: sanitized, defaults, identical on every peer (players and spectators); a promoted spectator's slot shows its name
     const wantN = host.names(), nickPeers = peers.filter(p => !p.gone && p.s.rb);
     const nickOk = wantN[0] === 'Saulo' && (NP < 2 || wantN[1] === 'bZéb do Rifl') && nickPeers.every(p => JSON.stringify(p.s.names()) === JSON.stringify(wantN))
-      && wantN.every(n => n.length <= 12 && !/[<>\u0000-\u001f]/.test(n)) && (NP < 3 || wantN[2] === 'Jogador 3');
+      && wantN.every(n => n.length <= 12 && !/[<>\u0000-\u001f]/.test(n)) && (NP < 3 || ['Jogador 3', 'Player 3'].includes(wantN[2]));
     console.log('nicks', JSON.stringify(wantN), 'same on', nickPeers.length, 'peers:', nickOk ? 'OK' : 'BAD', nickPeers.map(p => JSON.stringify(p.s.names())).filter(x => x !== JSON.stringify(wantN)));
     let specOk = nickOk;
     if (NSPEC) {

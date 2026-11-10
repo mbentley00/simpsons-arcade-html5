@@ -11,7 +11,7 @@ are scaled by one common factor so they stand as tall as Fat Tony while keeping 
 
 Usage: python tools/build_sheet_enemies.py [SPRITE_FOLDER] [--only id,id] [--out DIR] [--no-pack]
 """
-import argparse, os, subprocess, sys, tempfile
+import argparse, math, os, subprocess, sys, tempfile
 from PIL import Image
 
 ROOT = os.path.join(os.path.dirname(os.path.abspath(__file__)), '..')
@@ -76,6 +76,14 @@ CHARACTERS = {
         'pixellab_jasper/overhead_whack_f02', 'pixellab_jasper/overhead_whack_f04', 'pixellab_jasper/overhead_whack_f05', 'pixellab_jasper/overhead_whack_f06',
         'hurt_f00', 'hurt_f01',
         'knockdown_f01', 'knockdown_f04']},
+    # one complete sheet (128x128 cells, feet at y = 122): idle, walk, the censer smash (wind-up, censer swung over his
+    # head, smash with a burst of smoke), hurt, and the knockdown's airborne and lying poses
+    'bishop': {'dir': 'bishop', 'name': 'Bishop', 'kind': 'cutout', 'cell': 'auto', 'frames': [
+        'idle_f00', 'idle_f02', 'idle_f04', 'idle_f06',
+        'walk_f00', 'walk_f02', 'walk_f04', 'walk_f06',
+        'censer_smash_f03', 'censer_smash_f05', 'censer_smash_f07', 'censer_smash_f08',
+        'hurt_f01', 'hurt_f03',
+        'knockdown_f05', 'knockdown_f11']},
     **{k: mixed(*v) for k, v in {
         'hoodie_girl': ('14_hoodie_girl', 'Hoodie Girl', 'peace_wink', 'hop_kick', (3, 5, 7, 9)),
         'nanny': ('15_nanny', 'Nanny', 'curtsy', 'hat_boomerang', (4, 5, 7, 9)),
@@ -138,7 +146,7 @@ def layout(frames, cell=CELL, centre=None):
 
 def place(frames, cx, feet, L, R, U, D, k, cell=CELL):
     CW, CH = cell; FIT_W = CW - 2
-    ax = max(1 + round(L * k), min(CW - 2 - round(R * k), CW // 2))   # centred if the poses allow
+    ax = max(1 + math.ceil(L * k), min(CW - 2 - math.ceil(R * k), CW // 2))   # centred if the poses allow (extents rounded up: half-pixel centres)
     ay = CH - 2 - round(D * k)
     atlas = Image.new('RGBA', (CW * 4, CH * 4))
     for i, f in enumerate(frames):
