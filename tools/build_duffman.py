@@ -12,6 +12,8 @@ parser = argparse.ArgumentParser(description=__doc__)
 parser.add_argument('source', type=Path); parser.add_argument('destination', type=Path)
 parser.add_argument('--id', default='duffman'); parser.add_argument('--name', default='Duffman')
 parser.add_argument('--colors', help='16 comma-separated RGB hex colours, including transparent pen zero')
+parser.add_argument('--scale', type=float, default=0.75, help='on-screen size of one cell pixel (displayScale)')
+parser.add_argument('--anchor', default='32,91', help='feet position in the 64x96 cell, as X,Y')
 args = parser.parse_args()
 source, destination = args.source, args.destination
 destination.mkdir(parents=True, exist_ok=True)
@@ -49,7 +51,7 @@ for frame in range(16):
             tiles.extend(tile)
 asset = {'id': args.id, 'name': args.name, 'width': 64, 'height': 96, 'frames': 16,
          'tileWidth': 16, 'tileHeight': 16, 'tilesPerFrame': 24, 'format': 'k053247-4bpp',
-         'anchor': [32, 91], 'displayScale': 0.75, 'facing': 'left', 'palette': list(pal),
+         'anchor': [int(v) for v in args.anchor.split(',')], 'displayScale': args.scale, 'facing': 'left', 'palette': list(pal),
          'animations': {'idle': [0, 1, 2, 3], 'walk': [4, 5, 6, 7], 'attack': [8, 9, 10, 11], 'hit': [12, 13], 'fall': [14, 15]},
          'tiles': base64.b64encode(tiles).decode()}
 name = 'SIMP' + args.id.upper()

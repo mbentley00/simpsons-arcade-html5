@@ -7,6 +7,9 @@ vm.runInNewContext(fs.readFileSync(require.resolve('../web/custom/rivet.js'), 'u
 vm.runInNewContext(fs.readFileSync(require.resolve('../web/custom/slugger.js'), 'utf8'), ctx);
 vm.runInNewContext(fs.readFileSync(require.resolve('../web/custom/moleman.js'), 'utf8'), ctx);
 vm.runInNewContext(fs.readFileSync(require.resolve('../web/custom/comic_book_guy.js'), 'utf8'), ctx);
+// Converted from the SimpsonsSprites sheets by tools/build_sheet_enemies.py
+const SHEET_ENEMIES = { fat_tony: 'Fat Tony', rich_texan: 'Rich Texan', burns: 'Mr. Burns', moe: 'Moe', wiseguy: 'Wiseguy', mob_boss: 'Mob Boss' };
+for (const id of Object.keys(SHEET_ENEMIES)) vm.runInNewContext(fs.readFileSync(require.resolve('../web/custom/' + id + '.js'), 'utf8'), ctx);
 // custom palettes are given 16-pen slots from 4096 in sorted asset-id order (enemies.js install)
 const inSlot = (p, id) => { const b = 4096 + Object.keys(ctx.window.SIMPENEMY_ASSETS).sort().indexOf(id) * 16; return p >= b && p < b + 16; };
 const asset = ctx.window.SIMPDUFFMAN, pixels = E.decode(asset);
@@ -48,6 +51,14 @@ assert(v.bmp.filter(p=>inSlot(p,'slugger')).length>20,'Slugger renders as a nati
 {const mb=new Board(files),mv=new Video(mb);E.install(mb,mv,{0:rows},ctx.window.SIMPENEMY_ASSETS);mb.load(b.save());const k=Object.keys(mb.stageEnemySkins).find(k=>mb.stageEnemySkins[k].id==='duffman');mb.stageEnemySkins[k].id='comic_book_guy';mb.runFrames(1);mv.render();
  const used=mv.bmp.filter(p=>inSlot(p,'comic_book_guy')&&(p&15)===4);assert(used.length>100,'Comic Book Guy renders with his T-shirt colour ('+used.length+' px)');
  assert.equal(mv.bmp.filter(p=>inSlot(p,'duffman')).length,0,'Duffman is gone from that record');}
+for (const [id, name] of Object.entries(SHEET_ENEMIES)) {
+  const a = ctx.window.SIMPENEMY_ASSETS[id], px = E.decode(a); assert.equal(a.name, name); assert.equal(a.facing, 'left'); assert.equal(a.palette.length, 32);
+  const size = E.display(a); assert(size.height >= 85 && size.height <= 100, name + ' stands about as tall as a native goon');
+  for (let f = 0; f < 16; f++) { let n = 0; for (let y = 0; y < 96; y++) { assert.equal(px[f*6144+y*64], 0, name+' frame '+f+' left edge'); assert.equal(px[f*6144+y*64+63], 0, name+' frame '+f+' right edge'); for (let x = 0; x < 64; x++) if (px[f*6144+y*64+x]) n++; } assert(n > 500, name + ' frame ' + f + ' must be a full pose (' + n + ')'); }
+  const mb = new Board(files), mv = new Video(mb); E.install(mb, mv, { 0: rows }, ctx.window.SIMPENEMY_ASSETS); mb.load(b.save());
+  const k = Object.keys(mb.stageEnemySkins).find(k => mb.stageEnemySkins[k].id === 'duffman'); mb.stageEnemySkins[k].id = id; mb.runFrames(1); mv.render();
+  assert(mv.bmp.filter(p => inSlot(p, id)).length > 300, name + ' renders with his own palette');
+}
 assert(v.toRGB().some(p => p !== 0));
 const restored = new Board(files), restoredVideo = new Video(restored);
 E.install(restored,restoredVideo,{0:rows},ctx.window.SIMPENEMY_ASSETS); restored.load(b.save()); restoredVideo.render();
