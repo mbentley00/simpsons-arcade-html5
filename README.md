@@ -68,14 +68,14 @@ The loader accepts the 4-player world chips at these CRC32 values:
 | `072-d04.1d` | `78778013` | K053260 samples |
 | `simpsons.12c.nv` | `ec3f0449` | ER5911 EEPROM |
 
-Each player inserts a coin and presses start, as on the cabinet. High scores and settings from that EEPROM are kept in `localStorage` after the first boot.
+**Pick a character and play, no coin needed:** press **1**, **2**, **3** or **4** (or click **Play as** at the top) to play as Marge, Homer, Bart or Lisa. On the cabinet each character belongs to one player slot (Marge P1, Homer P2, Bart P3, Lisa P4); offline, your keyboard and first gamepad drive whichever character you pick, the Remix move keys included, and the character joins for free. Pressing start for a character who is not playing also joins for free. Switching to another character leaves the one you were playing in the game (Player 2's controls take it over). The choice is remembered. Online rooms keep the arcade rules: each browser is its own player and inserts a coin. High scores and settings from the EEPROM are kept in `localStorage` after the first boot.
 
 | | Move | Attack | Jump | Coin | Start |
 |---|---|---|---|---|---|
-| Player 1 | arrows or W A S D | Z or J | X or K | 5 | 1 or Enter |
-| Player 2 | numpad 8 / 4 / 5 or 2 / 6 | numpad 0 or N | numpad . or M | 6 | 2 |
-| Player 3 | gamepad | gamepad | gamepad | 7 | 3 |
-| Player 4 | gamepad | gamepad | gamepad | 8 | 4 |
+| Player 1 | arrows or W A S D | Z or J | X or K | 5 | Enter (1–4 pick a character) |
+| Player 2 | numpad 8 / 4 / 5 or 2 / 6 | numpad 0 or N | numpad . or M | 6 | numpad Enter |
+| Player 3 | gamepad | gamepad | gamepad | 7 | gamepad |
+| Player 4 | gamepad | gamepad | gamepad | 8 | gamepad |
 
 On a gamepad, the pad or stick moves, A attacks, B jumps, Select is the coin, and Start is start (X and Y also attack and jump when the Arcade Remix is off). Pad order follows the browser's pad list: the first pad is player 1. F2 holds the service switch.
 
@@ -190,6 +190,7 @@ Simpsons checks that need your zip, and in several cases a MAME log you capture 
 - `test/net_check.js` — in-process rollback, spectators, chat, nicknames.
 - `test/browser_check.py`, `test/test_coin_hint.py`, `test/test_gfx_modes.py`, `test/test_netplay.py`, `test/test_netplay_peerjs.py` (the real flow over the public PeerJS broker: Create room from a modded page, invite link, no desync), `test/test_room_list.py`, `test/test_signal_list.sh`, `test/test_relay.py` — page checks. The relay script expects a local `turnserver` unless `SIGNAL` points at a host you run.
 - `test/test_stage_editor.py` — editor painting, persistence, imports, online guards, and starting an edited stage in Chromium.
+- `test/test_character_choice.py` — keys 1–4 and the Play as buttons join a character without a coin, and the keyboard and Remix keys follow it.
 - `test/test_playback_controls.py` — pause/resume, audio muting and persistence, keyboard shortcuts, and the online pause guard.
 - `test/test_enemy_editor.py`, `test/enemy_check.js` — enemy editing and custom sprite rendering; the Node check also needs `unzip` on PATH.
 - `test/test_direct_launch.py`, `test/launch_check.js` — direct editor launch, cached state restoration with custom sprites, and native initialization of every editor scene. The Node check needs `unzip` on PATH.

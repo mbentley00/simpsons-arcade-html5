@@ -263,8 +263,10 @@
       if(m.frame-a.lastHit>flowWindow(s)) a.combo=0;
     }
     const pads=G.navigator?.getGamepads?G.navigator.getGamepads():[];
-    for(let p=0;p<Math.min(4,pads.length);p++) {
-      const pad=pads[p],a=s.players[p],b=n=>pad?.connected&&!!pad.buttons[n]?.pressed;
+    // pad n plays slot n, except that the first pad and the chosen character's slot swap (input.js character choice)
+    const chosen=G.SSRIN?G.SSRIN.slot:0, padSlot=i=>i===0?chosen:i===chosen?0:i;
+    for(let i=0;i<Math.min(4,pads.length);i++) {
+      const pad=pads[i],a=s.players[i],p=padSlot(i),b=n=>pad?.connected&&!!pad.buttons[n]?.pressed;
       const buttons=(b(4)||b(6)?1:0)|(b(5)?2:0)|(b(7)?4:0)|(b(2)?8:0)|(b(3)?16:0), edge=buttons&~(a.lastPadButtons||0);
       if(edge&1)queued.push({move:'dodge',p}); if(edge&2)queued.push({move:'special',p}); if(edge&4)queued.push({move:'throw',p});
       if(edge&8)queued.push({move:'heavy',p}); if(edge&16)queued.push({move:'signature',p});
@@ -863,7 +865,7 @@
       }
       const t=e.target;if(e.repeat||e.ctrlKey||e.metaKey||e.altKey||t?.isContentEditable||/^(INPUT|TEXTAREA|SELECT)$/.test(t?.tagName||''))return;
       if(e.code==='KeyH'&&playing(machine)){e.preventDefault();setHelp(true);return;}
-      const move=KEY_MOVES[e.code]; if(move){e.preventDefault();request(move);}
+      const move=KEY_MOVES[e.code]; if(move){e.preventDefault();request(move,G.SSRIN?G.SSRIN.slot:0);}   // the keyboard plays the chosen character (input.js)
     },true);
     const at=e=>{const sc=document.getElementById('screen');if(!sc)return null;const b=sc.getBoundingClientRect();if(!b.width)return null;return {x:(e.clientX-b.left)*SW/b.width,y:(e.clientY-b.top)*SH/b.height};};
     const hit=p=>p&&ui.cards.findIndex(c=>p.x>=c.x&&p.x<c.x+c.w&&p.y>=c.y&&p.y<c.y+c.h);

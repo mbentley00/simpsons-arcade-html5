@@ -30,23 +30,23 @@ with sync_playwright() as p:
         boot(pg, f'http://127.0.0.1:{port}/index.html?sound=0'); time.sleep(1); pg.evaluate('SSRG.run(2400)'); time.sleep(1); return pg, errs
     # PT, keyboard
     pg, errs = page('pt-BR'); s = pg.evaluate('SSRHINT.shown'); print('PT:', s)
-    check('PT text on attract', s == 'Aperte 5 para colocar ficha, depois 1 para entrar'); shot(pg, 'coin_hint_pt.png')
+    check('PT text on attract (offline free play)', s == 'Aperte 1-4 para jogar com Marge, Homer, Bart ou Lisa'); shot(pg, 'coin_hint_pt.png')
     pg.keyboard.press('Tab'); time.sleep(0.2); check('hidden while chat field open', pg.evaluate('SSRHINT.shown') is None)
     pg.keyboard.press('Escape'); time.sleep(0.2)
-    pg.keyboard.down('Digit5'); time.sleep(0.15); pg.keyboard.up('Digit5'); time.sleep(0.5); s = pg.evaluate('SSRHINT.shown'); print('after coin:', s)
-    check('after coin: press 1', s == 'Aperte 1 para entrar')
-    for i in range(120):  # Start, then the character select needs a confirm (attack) before the player object goes live
-        k = 'Digit1' if i < 5 else 'KeyZ'; pg.keyboard.down(k); time.sleep(0.1); pg.keyboard.up(k); time.sleep(0.2)
+    # 1 = play as Marge: no coin; the hint goes once she is in play (the start sequence takes a few seconds)
+    pg.keyboard.press('Digit1')
+    for i in range(120):
+        time.sleep(0.3)
         if pg.evaluate('SSRHINT.shown') is None: break
     time.sleep(1); print('flags', pg.evaluate('SSRG.machine.ram[0x0a40]'), pg.evaluate('SSRHINT.shown')); check('hidden once P1 is in', pg.evaluate('SSRHINT.shown') is None); shot(pg, 'coin_hint_joined.png')
     check('no page errors', not errs); pg.context.close()
     # EN
     pg, errs = page('en-US'); s = pg.evaluate('SSRHINT.shown'); print('EN:', s)
-    check('EN text', s == 'Press 5 to insert a coin, then 1 to join'); shot(pg, 'coin_hint_en.png'); pg.context.close()
+    check('EN text', s == 'Press 1-4 to play as Marge, Homer, Bart or Lisa'); shot(pg, 'coin_hint_en.png'); pg.context.close()
     # gamepad
     pg, errs = page('pt-BR', pad=True); s = pg.evaluate('SSRHINT.shown'); print('pad:', s)
-    check('pad wording', s == 'Aperte Select para colocar ficha, depois Start para entrar'); shot(pg, 'coin_hint_pad.png')
-    pg.keyboard.press('ArrowLeft'); time.sleep(0.2); check('key press -> keyboard wording', pg.evaluate('SSRHINT.shown').startswith('Aperte 5'))
+    check('pad wording', s == 'Aperte Start para jogar (1-4 escolhe o personagem)'); shot(pg, 'coin_hint_pad.png')
+    pg.keyboard.press('ArrowLeft'); time.sleep(0.2); check('key press -> keyboard wording', pg.evaluate('SSRHINT.shown').startswith('Aperte 1-4'))
     pg.context.close()
     # determinism: the overlay does not change the sim (RAM hash after N frames with hint on vs off, no rAF loop)
     pg, _ = page('pt-BR'); r = pg.evaluate("""() => { SSRG.pause(true); const m = SSRG.machine, s0 = m.save(), out = [];

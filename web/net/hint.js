@@ -34,6 +34,12 @@
     pollPads();
     const pad = dev === 'pad';
     if (N && N.spec) return N.vaga ? (pad ? TXT.vagaPad : TXT.vaga) : null;
+    // offline: free play with a character choice (input.js), so no coin is needed
+    if (!N && G.SSRIN && G.SSRIN.choose) {
+      if (active(m, G.SSRIN.slot)) return null;
+      return pad ? (PT ? 'Aperte Start para jogar (1-4 escolhe o personagem)' : 'Press Start to play (1-4 picks a character)')
+        : (PT ? 'Aperte 1-4 para jogar com Marge, Homer, Bart ou Lisa' : 'Press 1-4 to play as Marge, Homer, Bart or Lisa');
+    }
     const slot = N ? N.slot : 0; if (slot < 0 || slot > 3) return null;
     if (active(m, slot)) { coined = false; return null; }
     if (coined && performance.now() - coinT > 60000) coined = false;
