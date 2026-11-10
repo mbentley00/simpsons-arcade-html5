@@ -93,7 +93,8 @@
     const word=o=>((r[o]<<8)|r[o+1])<<16>>16, cameraX=word(0x8ac), cameraY=word(0x8b2);
     return rows.map((row,i)=>({key:m.ram[0x867]+'/'+i,skin:row.skin,name:row.npcName||row.skin,dialogue:row.dialogue,x:position(row).x-cameraX+10,feet:position(row).y-cameraY-26,anim:'idle',elapsed:m.frame}));
   }
-  function install(m, video, edits, asset) {
+  // options.quiet: enemy stages played without their original enemies (only placed or moved records spawn regular enemies)
+  function install(m, video, edits, asset, options = {}) {
     edits = validate(edits); if (!Object.keys(edits).length) return;
     // Accept a single asset for older callers, or the registry for multiple distinct custom characters.
     const assets = asset?.id ? { [asset.id]: asset } : (asset || {});
@@ -112,7 +113,7 @@
       }
       const data = new Uint8Array((sorted.length + 1) * 8); data.fill(255, sorted.length * 8);
       sorted.forEach((r, i) => data.set(r.data, i * 8));
-      tables[stage] = { rows: sorted, data, list: (m.prog[0x7efbc + stage * 2] << 8) | m.prog[0x7efbd + stage * 2] };
+      tables[stage] = { rows: sorted, data, list: (m.prog[0x7efbc + stage * 2] << 8) | m.prog[0x7efbd + stage * 2], quiet: (options.quiet || []).includes(+stage) };
     }
     const mr = m.mr, mw = m.mw;
     // Plain board data participates in save/load, including cached direct-launch checkpoints.
@@ -133,8 +134,29 @@
         const table = tables[this.ram[0x867]], i = (this.cpu.x.w - 0x7800) / 8;
         delete this.stageEnemySkins[a - 0x4000];
         if (table && Number.isInteger(i) && table.rows[i]?.skin) this.stageEnemySkins[a - 0x4000] = { id: table.rows[i].skin, lastX: null };
+        // A stage made without the original enemies: only records the author placed or moved bring a visible enemy.
+        // The stage's own goons (records, goon characters, script entrances) still spawn, because waves and the boss
+        // wait for them to fall, but as hidden ghosts that are knocked out on their first frame (see reap below).
+        const row = table && Number.isInteger(i) ? table.rows[i] : null, ghosts = this.stageGhosts || (this.stageGhosts = {});
+        delete ghosts[a - 0x4000];
+        if (table?.quiet && !(row && (row.edited || row.skin))) { ghosts[a - 0x4000] = 1; this.stageEnemiesHeld = (this.stageEnemiesHeld || 0) + 1; }
       }
       return mw.call(this, a, value);
+    };
+    // Once per frame (sprite DMA at vblank): ghosts get the game's own knockdown hit with no health left, so the game
+    // counts them as defeated; their sprites are never drawn.
+    m.stageGhosts = {};
+    const reapDma = m.objectDma;
+    m.objectDma = function () {
+      const r = this.ram;
+      for (const key of Object.keys(this.stageGhosts || {})) {
+        const o = +key;
+        // 1 = allocated, not switched on yet (an entrance still to play); 2 = seen active. Forget it once an active one is freed.
+        if (!(r[o] & 0x80)) { if (this.stageGhosts[key] === 2) delete this.stageGhosts[key]; continue; }
+        this.stageGhosts[key] = 2;
+        if ((r[o] & 0x40) && r[o + 0x1b] && !(r[o] & 0x20)) { r[o + 0x1e] = 0x14; r[o + 0x1b] = 0; r[o + 0x25] = 0x4a; r[o + 0x26] = 0x40; r[o] |= 0x20; }
+      }
+      return reapDma.call(this);
     };
     if (!video || !Object.keys(assets).length) return;
     const sprites = {}, palettes = [];
@@ -148,6 +170,11 @@
       for (let i = 0; i < 256; i++) {
         const w = this.spr[i * 8]; if (!(w & 0x8000) || !(w & 255)) continue;
         let actor = -1, skin;
+        for (const key of Object.keys(this.stageGhosts || {})) {
+          const o = +key, start = (((this.ram[o + 0x59] << 8) | this.ram[o + 0x5a]) - 0x2000) / 16;
+          if (i >= start && i < start + 8) { next[compact * 8] = { ghost: true, actor: o }; break; }
+        }
+        if (next[compact * 8]) { compact++; continue; }
         for (const [key, s] of Object.entries(this.stageEnemySkins)) {
           const o = +key;
           const start = (((this.ram[o + 0x59] << 8) | this.ram[o + 0x5a]) - 0x2000) / 16;
@@ -187,6 +214,7 @@
     video.spriteOverride = (v,offs,pmask,first) => {
       if(first) drawn.clear();
       const r=m.stageEnemyRecords[offs]; if(!r) return false;
+      if(r.ghost) return true;   // a held-back enemy of a stage made without the original enemies: never drawn
       if(drawn.has(r.actor)) return true; drawn.add(r.actor);
       return drawCustom(v,r,pmask);
     };

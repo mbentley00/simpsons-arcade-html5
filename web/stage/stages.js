@@ -2,7 +2,9 @@
 // original stage's ground (its ROM maps, so its collision and section scripts) and has its own level art, enemy list
 // and scripted events. It is played with index.html?custom=<id>&play=1; without ?custom the game is the original.
 // Saved in the editor document (SIMPSTAGE.PATCH_KEY) as
-//   stages: { "<id>": { name, scene, tileset: {id, maps} | null, enemies: [spawn rows] | null, events: [{type, x}] } }
+//   stages: { "<id>": { name, scene, tileset: {id, maps} | null, enemies: [spawn rows] | null, events: [{type, x}], noEnemies? } }
+// noEnemies: the stage's own goons never appear (they spawn hidden and are knocked out at once, so waves and the boss
+// still advance); only enemies placed or moved in the editor show up. The boss stays.
 // Older documents kept custom art as an override of an original stage ("tilesets": {scene: {id, maps}}); migrate()
 // turns each of those into a custom stage.
 (function (G) {
@@ -34,7 +36,7 @@
       const tv = s.tileset && G.SIMPTILES ? SIMPTILES.validate({ [s.scene]: s.tileset })[s.scene] || null : null;
       let enemies = null;
       if (Array.isArray(s.enemies) && G.SIMPENEMY) try { enemies = SIMPENEMY.validate({ [stage]: s.enemies })[stage] || null; } catch (e) { enemies = null; }
-      out[id] = { name: String(s.name || 'Custom stage').trim().slice(0, 40) || 'Custom stage', scene: s.scene, tileset: tv, enemies, events: G.SIMPEVENTS ? SIMPEVENTS.validate(s.events, tv ? tv.id : null) : [] };
+      out[id] = { name: String(s.name || 'Custom stage').trim().slice(0, 40) || 'Custom stage', scene: s.scene, tileset: tv, enemies, events: G.SIMPEVENTS ? SIMPEVENTS.validate(s.events, tv ? tv.id : null) : [], ...(s.noEnemies === true ? { noEnemies: true } : {}) };
     }
     return out;
   }

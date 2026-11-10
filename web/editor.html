@@ -55,6 +55,7 @@ dialog#newStage{background:var(--panel);color:var(--text);border:1px solid var(-
     <canvas id="enemyPreview" width="64" height="96" aria-label="Enemy preview"></canvas>
     <div id="enemyNote">Click empty map space to add. Drag a marker to move it. Select a marker and press Delete to remove. Enemy placements apply to the whole stage; use Main to position them.</div>
     <label title="Scroll locks, wave and event records in the spawn stream"><input id="showScripts" type="checkbox" style="width:auto"> Show scripts &amp; triggers</label>
+    <label id="noEnemiesRow" hidden title="The stage's own goons never appear; enemies you place or move do. The boss stays."><input id="noEnemies" type="checkbox" style="width:auto"> No original enemies in this stage</label>
     <select id="enemyList" size="6" aria-label="Characters in this stage"></select>
     <small id="enemyInfo" aria-live="polite"></small>
     <div style="display:flex;gap:8px"><label>X <input id="enemyX" type="number" min="0" max="65279" step="1"></label><label>Y <input id="enemyY" type="number" min="0" max="1016" step="8"></label></div>
@@ -90,6 +91,7 @@ dialog#newStage{background:var(--panel);color:var(--text);border:1px solid var(-
   <p>A new stage is built on the ground of an original stage (its walkable floor and collision). The original stage is not changed.</p>
   <label>Name <input id="nsName" maxlength="40" placeholder="Name"></label>
   <label>Start from <select id="nsTemplate"></select></label>
+  <label class="check"><input id="nsNoEnemies" type="checkbox" style="width:auto"> Start without the original enemies (place your own; the boss stays)</label>
   <div class="row"><button id="nsCancel">Cancel</button><button id="nsCreate" class="go">Create</button></div>
 </form></dialog>
 <div id="status"><span id="hover">&nbsp;</span> <span id="msg"></span></div>

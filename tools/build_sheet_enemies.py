@@ -54,6 +54,14 @@ CHARACTERS = {
     'fat_tony': goon('fat_tony', 'Fat Tony'),
     'rich_texan': goon('rich_texan', 'Rich Texan'),
     'burns': cutout('cast3_stonecutters/26_burns', 'Mr. Burns'),
+    # the cutout of Comic Book Guy from his own lineup art: the standing pose and his raised-finger "actually..." as the
+    # idle, the clipboard smack as the attack (replaces the earlier drawn-by-code version; same asset id)
+    'comic_book_guy': {'dir': 'cast1_cutouts/04_clipboard_guy', 'name': 'Comic Book Guy', 'kind': 'cutout', 'cell': 'auto', 'frames': [
+        'idle_f00', 'idle_f00', 'actually_f00', 'actually_f01',
+        'walk_f00', 'walk_f02', 'walk_f04', 'walk_f06',
+        'clipboard_smack_f00', 'clipboard_smack_f00', 'clipboard_smack_f01', 'clipboard_smack_f01',
+        'hurt_f00', 'hurt_f01',
+        'knockdown_f01', 'knockdown_f04']},
     'moe': cutout('cast3_stonecutters/25_moe', 'Moe'),
     'wiseguy': cutout('cast1_cutouts/10_wine_mobster', 'Wiseguy'),
     # his punch reaches out with a whole arm and would shrink every frame; the belly slam is compact
@@ -81,6 +89,7 @@ CHARACTERS = {
     }.items()},
 }
 FALL = (14, 15)
+SCALE_FROM = ('burns', 'moe', 'wiseguy', 'mob_boss')   # the cutouts whose median idle height is drawn as tall as Fat Tony
 SHARED_FEET = (120, 180)   # where multi-folder characters' feet are put on their shared 240x200 canvas
 
 def frame(src, ch, f):
@@ -164,9 +173,9 @@ def main():
     ap.add_argument('--no-pack', action='store_true')
     a = ap.parse_args()
     ids = a.only.split(',') if a.only else list(CHARACTERS)
-    loaded = {i: load(a.source, CHARACTERS[i]) for i in CHARACTERS if i in ids or (CHARACTERS[i]['kind'] == 'cutout' and 'refs' not in CHARACTERS[i]) or i == 'fat_tony'}
+    loaded = {i: load(a.source, CHARACTERS[i]) for i in CHARACTERS if i in ids or i in SCALE_FROM or i == 'fat_tony'}
     # Cutouts share one factor: the median cutout idle height is drawn as tall as Fat Tony.
-    cut = sorted(idle_height(f) for i, f in loaded.items() if CHARACTERS[i]['kind'] == 'cutout' and 'refs' not in CHARACTERS[i])
+    cut = sorted(idle_height(loaded[i]) for i in SCALE_FROM)
     cutout_scale = idle_height(loaded['fat_tony']) / cut[len(cut) // 2]
     tmp = tempfile.mkdtemp()
     for i in ids:

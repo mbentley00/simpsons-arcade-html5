@@ -11,7 +11,7 @@
   'use strict';
   const q = new URLSearchParams(location.search);
   const off = q.get('mods') === '0' || q.has('sala');
-  let pending = null, active = 0, enemies = {}, tilesets = {}, events = [], custom = null;
+  let pending = null, active = 0, enemies = {}, tilesets = {}, events = [], custom = null, quiet = [];
   let sc = Number(q.get('scene')), warp = !off && Number.isInteger(sc) && sc >= 2 && sc <= 16;
   let done = !warp;
   function saved() {
@@ -35,12 +35,16 @@
       custom = { id, name: st.name, scene: st.scene }; sc = st.scene; warp = true; done = false;
       if (st.tileset) tilesets = { [st.scene]: st.tileset };
       if (st.enemies) enemies = Object.assign({}, enemies, { [SIMPCUSTOM.enemyStage(st.scene)]: st.enemies });
+      if (st.noEnemies && G.SIMPENEMY) { // played without the stage's own enemies (enemies.js install option `quiet`)
+        const stage = SIMPCUSTOM.enemyStage(st.scene); quiet = [stage];
+        if (!enemies[stage] && files['prog.bin']) enemies = Object.assign({}, enemies, { [stage]: SIMPENEMY.read(files['prog.bin'], stage) });
+      }
       events = st.events;
     }
     return files;
   }
   function install(m, video) {
-    if (!off && G.SIMPENEMY) SIMPENEMY.install(m, video, enemies, G.SIMPENEMY_ASSETS || G.SIMPDUFFMAN);
+    if (!off && G.SIMPENEMY) SIMPENEMY.install(m, video, enemies, G.SIMPENEMY_ASSETS || G.SIMPDUFFMAN, { quiet });
     // custom level art: replaces the picture of a stage slot; its ROM maps and collision are unchanged
     if (!off && G.SIMPTILES && video) for (const t of Object.values(tilesets)) SIMPTILES.install(m, video, SIMPTILES.sets[t.id], t.maps);
     const art = Object.values(tilesets)[0];

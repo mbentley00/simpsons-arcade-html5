@@ -180,16 +180,24 @@
   function openNewStage() {
     const sel = $('nsTemplate'); sel.innerHTML = '';
     SIMPCUSTOM.templates().forEach((t, i) => { const o = document.createElement('option'); o.value = i; o.textContent = t.label; sel.appendChild(o); });
-    $('nsName').value = ''; $('newStage').showModal(); $('nsName').focus();
+    $('nsName').value = ''; $('nsNoEnemies').checked = false; $('newStage').showModal(); $('nsName').focus();
   }
-  function createStage(name, t) {
+  function createStage(name, t, noEnemies) {
     const set = t.art && SIMPTILES.sets[t.art], nm = (name || '').trim() || (set ? set.name : 'New stage');
     const id = SIMPCUSTOM.newId(stages, nm); stages[id] = SIMPCUSTOM.make(nm, t.scene, t.art);
+    // without the original enemies: the plain enemy records are dropped so the map starts empty; goons that come from the
+    // stage's own characters and scripts are switched off in play (enemies.js `quiet`)
+    if (noEnemies) { stages[id].noEnemies = true; stages[id].enemies = E.read(orig, SIMPCUSTOM.enemyStage(t.scene)).filter(r => E.kind(r) !== 'enemy'); }
     st.custom = id; st.scene = SIMPCUSTOM.sceneIndex(t.scene); st.area = set ? set.area : 0; st.sel = 0; undo = []; redo = [];
-    saveNow(); loadSection(); msg(`Created ${stages[id].name}. It plays on ${S.SCENES[st.scene].name}'s ground; the original stage is unchanged.`);
+    saveNow(); loadSection(); msg(`Created ${stages[id].name}. It plays on ${S.SCENES[st.scene].name}'s ground; the original stage is unchanged.` + (noEnemies ? ' It has no enemies yet: open Enemies to place your own (the boss stays).' : ''));
     return id;
   }
-  $('nsCreate').onclick = e => { e.preventDefault(); const t = SIMPCUSTOM.templates()[+$('nsTemplate').value]; $('newStage').close(); if (t) createStage($('nsName').value, t); };
+  $('nsCreate').onclick = e => { e.preventDefault(); const t = SIMPCUSTOM.templates()[+$('nsTemplate').value], none = $('nsNoEnemies').checked; $('newStage').close(); if (t) createStage($('nsName').value, t, none); };
+  $('noEnemies').onchange = () => {
+    const cs = custom(); if (!cs) return;
+    if ($('noEnemies').checked) cs.noEnemies = true; else delete cs.noEnemies;
+    saveNow(); syncEnemies(); drawAll(); msg(cs.noEnemies ? `${cs.name}: the stage's own goons are off (faded markers). Enemies you place or move still appear.` : `${cs.name}: the stage's own goons are back.`);
+  };
   $('nsCancel').onclick = e => { e.preventDefault(); $('newStage').close(); syncUi(); };
   $('newStage').addEventListener('close', () => syncUi());
   $('stageRename').onclick = () => {
@@ -362,13 +370,15 @@
     }
     nativeCache.set(cap, res); return res;
   }
-  window.SIMPEDITOR_TEST = { nativePreview, createStage: (name, art, scene) => createStage(name, { art, scene }), get stages() { return stages; } }; // for test/test_native_characters.py
+  window.SIMPEDITOR_TEST = { nativePreview, createStage: (name, art, scene, noEnemies) => createStage(name, { art, scene }, noEnemies), get stages() { return stages; } };
+  // an original goon that a stage without the original enemies keeps hidden in play (drawn faded in the editor)
+  const heldBack = row => !!custom()?.noEnemies && !row.edited && !row.skin && (E.kind(row) === 'enemy' || /^Goon/.test(E.label(row, enemyStage()))); // for test/test_native_characters.py
   const enemyName = row => row.role === 'npc' ? (row.npcName || assets[row.skin]?.name) : assets[row.skin]?.name || E.label(row, enemyStage());
   function drawEnemies() {
     ctx.imageSmoothingEnabled = false;
     enemyRows.forEach((row, i) => {
       if (!visibleEntity(row)) return;
-      const { x, y } = E.position(row), selected = i === enemySelected;
+      const { x, y } = E.position(row), selected = i === enemySelected; ctx.globalAlpha = heldBack(row) ? .3 : 1;
       const asset = assets[row.skin], k0 = E.kind(row), pv = !asset && k0 !== 'script' ? nativePreview(row.data[7]) : null;
       const size = asset ? E.display(asset) : pv ? { width: pv.canvas.width, height: pv.canvas.height, anchor: [pv.ax, pv.ay] } : { width:32, height:56, anchor:[16,52] };
       if (asset) ctx.drawImage(thumbnails[row.skin], x - size.anchor[0], y - size.anchor[1], size.width, size.height);
@@ -377,21 +387,23 @@
       ctx.strokeStyle = selected ? '#fff' : color; ctx.fillStyle = selected ? '#ffc861' : color; ctx.lineWidth = 2;
       if (k === 'script') ctx.setLineDash([3, 3]);
       ctx.beginPath(); ctx.ellipse(x, y, 12, 5, 0, 0, Math.PI * 2); ctx.stroke(); ctx.setLineDash([]);
-      if (!asset && !pv && k !== 'script') { ctx.globalAlpha = .55; ctx.fillStyle = color; ctx.fillRect(x - 10, y - 46, 20, 44); ctx.globalAlpha = 1; }
+      if (!asset && !pv && k !== 'script') { const a0 = ctx.globalAlpha; ctx.globalAlpha = a0 * .55; ctx.fillStyle = color; ctx.fillRect(x - 10, y - 46, 20, 44); ctx.globalAlpha = a0; }
       if (selected || i === enemyHover) { // names only for the selected or hovered marker (the list on the right has them all)
         ctx.font = '10px system-ui'; const name = enemyName(row), tw = ctx.measureText(name).width + 8;
         ctx.fillStyle = 'rgba(0,0,0,.85)'; ctx.fillRect(x - tw / 2, y + 8, tw, 14);
         ctx.fillStyle = selected ? '#ffc861' : '#fff'; ctx.fillText(name, x - tw / 2 + 4, y + 19);
       }
       if (selected) ctx.strokeRect(x - size.anchor[0] - 1, y - size.anchor[1] - 1, size.width + 2, size.height + 2);
+      ctx.globalAlpha = 1;
     });
   }
   function syncEnemies() {
     const list = $('enemyList'); list.innerHTML = '';
+    $('noEnemiesRow').hidden = !custom() || mode !== 'enemies'; $('noEnemies').checked = !!custom()?.noEnemies;
     enemyRows.forEach((row, i) => {
       if (!visibleEntity(row)) return;
       const o = document.createElement('option'), p = E.position(row); o.value = i;
-      o.textContent = `${enemyName(row)} · ${p.x}, ${p.y}`; list.appendChild(o);
+      o.textContent = `${enemyName(row)} · ${p.x}, ${p.y}${heldBack(row) ? ' (off)' : ''}`; list.appendChild(o);
     });
     list.value = enemySelected;
     const row = enemyRows[enemySelected], selected = row && visibleEntity(row);
