@@ -21,7 +21,10 @@ console.log(`OK: native hit combo ${best}, launcher peak ${maxZ}px over ${airFra
   d.onFrame=()=>{for(const e of events)if(+e[1]+1===d.frame)d.inputs[e[2]]=255&~parseInt(e[3],16);};
   while(d.frame<2480)d.runFrames(1);d.onFrame=null;C.install(d,{noUI:true,seed:7});
   const s=d.arcadeCombat;let at=-1;
-  for(let f=0;f<600&&at<0;f++){d.inputs.P1=f%40<20?253:255;if(f>40&&f%3===0)C.request('dodge');C.beforeFrame(d);d.runFrames(1);C.afterFrame(d);if(s.stage.counters)at=f;}
+  // walk in, then keep rolling through the nearest enemy (each roll aims at it, so the player stays in the fight)
+  const r=d.ram,w=o=>((r[o]<<8)|r[o+1])<<16>>16,nearest=()=>{let best=null;for(let e=0xd40;e<0x1640;e+=0x60)if((r[e]&0x40)&&r[e+0x1b]&&(!best||Math.abs(w(e+12)-w(0xa4c))<Math.abs(w(best+12)-w(0xa4c))))best=e;return best;};
+  for(let f=0;f<900&&at<0;f++){const e=nearest(),close=e&&Math.abs(w(e+12)-w(0xa4c))<70;d.inputs.P1=close?255:f%40<20?253:255;
+    if(close&&f%3===0){s.players[0].dir=w(e+12)>=w(0xa4c)?1:-1;C.request('dodge');}C.beforeFrame(d);d.runFrames(1);C.afterFrame(d);if(s.stage.counters)at=f;}
   assert(at>=0,'a native enemy hit inside a dodge must open a counter');assert(s.players[0].counterUntil>d.frame);
   console.log(`OK: native perfect dodge at frame +${at}, counter window ${s.players[0].counterUntil-d.frame} frames`);
 }
@@ -41,4 +44,31 @@ console.log(`OK: native hit combo ${best}, launcher peak ${maxZ}px over ${airFra
   let reacted=false;for(let f=0;f<6;f++){if(r[foe+2]===4)reacted=true;C.beforeFrame(b);b.runFrames(1);C.afterFrame(b);}
   assert(reacted,'the ball knocks the enemy down');
   console.log(`OK: native bowling ball hit enemy 0x${foe.toString(16)} after ${hit+1} frames (health ${full} -> ${r[foe+0x1b]}, knocked down)`);
+}
+// Roll, heavy attack and the sprite pipeline on the real board with the real video.
+{
+  const {Video}=require('../web/sim/video.js'),bd=new Board(require('./roms.js')());
+  bd.onFrame=()=>{for(const e of events)if(+e[1]+1===bd.frame)bd.inputs[e[2]]=255&~parseInt(e[3],16);};
+  while(bd.frame<2480)bd.runFrames(1);bd.onFrame=null;
+  const v=new Video(bd);C.install(bd,{noUI:true,seed:7,video:v});
+  const r=bd.ram,s=bd.arcadeCombat,a=s.players[0],word=o=>((r[o]<<8)|r[o+1])<<16>>16,step=(bits=255)=>{bd.inputs.P1=bits;C.beforeFrame(bd);bd.runFrames(1);C.afterFrame(bd);};
+  assert.equal(r[0xa44],0,'player 1 is character 0 (Marge)');
+  for(let i=0;i<10;i++)step();
+  const x0=word(0xa4c),z0=word(0xa51);a.dir=1;bd.inputs.P1=255&~4;C.beforeFrame(bd);C.request('roll');
+  let mid=null,stand=null;for(let i=0;i<C.ROLL.frames;i++){step(255&~4);v.render();const b=v.combatFx.box(0);if(b&&(!mid||b.outH/b.h<mid.outH/mid.h))mid={...b};}
+  const rolled=word(0xa4c)-x0;assert(rolled>=40,'a roll travels ('+rolled+' px)');assert(word(0xa51)!==z0,'up tilts the roll into the stage');
+  stand={w:mid.w,h:mid.h};
+  assert(mid&&mid.outH<mid.h*.75&&mid.outW>mid.w*1.2,`mid-roll the sprite is turned on its side (${mid.w}x${mid.h} -> ${mid.outW}x${mid.outH})`);
+  assert(Math.abs(mid.bottom-mid.floor)<=3,'the tumbling sprite stays on the floor '+JSON.stringify(mid));
+  for(let i=0;i<30;i++)step();
+  // walk to the first enemies and smash one (the roll moved Marge into another depth lane: line her up with the
+  // nearest enemy's depth once it is in reach, so this checks the attack rather than navigation)
+  let smash=false;for(let f=0;f<900&&!smash;f++){
+    const lane=[...Array(15)].map((_,k)=>0xd40+k*0x60).find(e=>(r[e]&0x40)&&r[e+0x1b]&&Math.abs(word(e+12)-word(0xa4c))<80);
+    if(lane&&a.heavyAt<0){r[0xa51]=r[lane+17];r[0xa52]=r[lane+18];}
+    const near=[...Array(15)].some((_,k)=>{const e=0xd40+k*0x60;return (r[e]&0x40)&&r[e+0x1b]&&Math.abs(word(e+12)-word(0xa4c))<60&&Math.abs(word(e+17)-word(0xa51))<10;});
+    if(near&&bd.frame>=a.heavyReady&&a.heavyAt<0){const e=[...Array(15)].map((_,k)=>0xd40+k*0x60).find(e=>(r[e]&0x40)&&r[e+0x1b]&&Math.abs(word(e+12)-word(0xa4c))<60);a.dir=word(e+12)>word(0xa4c)?1:-1;C.request('heavy');}
+    step(near?255:(f%60<30?253:255&~(f%120<60?4:8)));if(s.message==='SMASH!')smash=true;}
+  assert(smash,'a heavy attack lands on a real enemy as a SMASH');
+  console.log(`OK: native roll moved ${rolled}px, sprite ${mid.w}x${mid.h} -> ${mid.outW}x${mid.outH} mid-roll, heavy SMASH on a real enemy`);
 }

@@ -39,7 +39,8 @@
     let v = 0;
     if (b(14) || ax < -0.5) v |= L; if (b(15) || ax > 0.5) v |= R;
     if (b(12) || ay < -0.5) v |= U; if (b(13) || ay > 0.5) v |= D;
-    if (b(0) || b(2)) v |= FIRE; if (b(1) || b(3)) v |= JUMP; if (b(8)) v |= COIN; if (b(9)) v |= START;
+    // With the offline Arcade Remix on (combat.js sets remixPad), X and Y are Heavy and Signature instead of extra Attack/Jump.
+    if (b(0) || (!api.remixPad && b(2))) v |= FIRE; if (b(1) || (!api.remixPad && b(3))) v |= JUMP; if (b(8)) v |= COIN; if (b(9)) v |= START;
     return v;
   }
   // Local devices -> FrameInput (Uint8Array(4)); block = true (chat field open) gives neutral input
@@ -87,7 +88,7 @@
     eepromLoad, eepromSave, eepromClear,
   };
   if (G.addEventListener) { attach(G); G.addEventListener('pagehide', () => eepromSave(machine)); G.addEventListener('visibilitychange', () => document.hidden && eepromSave(machine)); }
-  const api = { block: false, L, R, U, D, FIRE, JUMP, COIN, START, KEYMAP, attach, sample, applyFrame, fromPorts, held,
+  const api = { block: false, remixPad: false, L, R, U, D, FIRE, JUMP, COIN, START, KEYMAP, attach, sample, applyFrame, fromPorts, held,
     consumeLatch() { for (const k of Object.keys(latched)) delete latched[k]; } };
   if (typeof module !== 'undefined') module.exports = api; else { G.SSRIN = api; G.SIMPI = SIMPI; }
 })(typeof window !== 'undefined' ? window : globalThis);

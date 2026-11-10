@@ -56,7 +56,10 @@ assert(elites>3&&elites<25,'about 28% elites at stage 5, got '+elites);
 const run=s=>{const b=board();b.ram[0x803]=9;b.arcadeCombat.rng=s;const out=[];for(let i=0;i<20;i++){b.ram[0xf80]=0;C.afterFrame(b);b.ram[0xf80]=0xc0;b.ram[0xf9b]=10;C.afterFrame(b);out.push(!!b.arcadeCombat.elite[0xf80]);}return out.join();};
 assert.equal(run(99),run(99),'elite rolls are deterministic for a seed');
 m.arcadeCombat.elite[0xf80]=true;m.ram[0xf9b]=4;m.ram[0xa5b]=20;m.arcadeCombat.players[0].focus=0;m.mw(0x4f9b,0);
-assert.equal(m.ram[0xa5b],24);assert.equal(m.arcadeCombat.players[0].focus,27);assert.equal(m.arcadeCombat.stage.elites,1);assert(!m.arcadeCombat.elite[0xf80]);
+assert.equal(m.ram[0xa5b],20,'health comes from the dropped snack, not instantly');assert.equal(m.arcadeCombat.players[0].focus,27);assert.equal(m.arcadeCombat.stage.elites,1);assert(!m.arcadeCombat.elite[0xf80]);
+{const s=m.arcadeCombat,k=s.pickups[0];assert.equal(s.pickups.length,1,'an elite drops a snack');assert.deepEqual(JSON.parse(JSON.stringify(s.pickups)),s.pickups,'pickups are plain data');
+ const kind=C.PICKUP.kinds[k.kind];m.ram[0xa4c]=m.ram[0xf8c];m.ram[0xa4d]=m.ram[0xf8d];m.ram[0xa51]=m.ram[0xf91];m.ram[0xa52]=m.ram[0xf92];s.players[0].focus=0;C.beforeFrame(m);
+ assert.equal(s.pickups.length,0,'walking over the snack eats it');assert.equal(m.ram[0xa5b],Math.min(40,20+kind.heal));assert.equal(s.players[0].focus,kind.focus);}
 m=board();for(let i=0;i<30;i++){m.ram[0xf80]=0;C.afterFrame(m);m.ram[0xf80]=0xc0;C.afterFrame(m);}assert.deepEqual(m.arcadeCombat.elite,{},'no elites on stage 1');
 console.log('ok seeded elite enemies with stage scaling and KO rewards');
 // Results card, rank, rarity weighting, rank bonuses.
@@ -83,3 +86,58 @@ m.ram[0xf80+0x11]=0;m.ram[0xfe0+0x11]=0;m.ram[0x1040+0x11]=0;
 C.request('throw');C.beforeFrame(m);assert.equal(m.arcadeCombat.balls[0].hit.length,3);assert.equal(m.arcadeCombat.message,'STRIKE!');
 m=board();m.ram[0xf92]=100;C.request('throw');for(let i=0;i<20;i++){m.frame++;C.beforeFrame(m);}assert.equal(m.ram[0xf9b],40,'other depth lanes are not hit');
 console.log('ok bowling balls: free throws with cooldown, confirmed hits, STRIKE on three hits, depth lanes, plain data');
+// Heavy attack: wind-up holds the player, a dash, then a native attack press; a native hit in the window is a SMASH.
+{
+  const m=board(),s=m.arcadeCombat,a=s.players[0],seen=[];C.request('heavy');
+  for(let i=0;i<C.HEAVY.windup+C.HEAVY.dash+1;i++){C.beforeFrame(m);seen.push(m.inputs.P1);m.frame++;m.inputs.P1=255;}
+  assert(seen.slice(0,C.HEAVY.windup).every(v=>v===255),'wind-up releases every button');
+  assert.equal(seen[C.HEAVY.windup],253,'the dash holds the facing direction');assert.equal(seen[seen.length-1],255&~16,'then the native attack is pressed');
+  assert(a.heavyHitUntil>=m.frame);m.mw(0x4f9b,36);assert.equal(m.ram[0xf9b],30,'a heavy hit deals 1.6x + 3');assert.equal(s.message,'SMASH!');
+  C.afterFrame(m);assert.equal((m.ram[0xf8f]<<8)|m.ram[0xf90],0x700,'and knocks the enemy far back');
+  const at=a.heavyAt,ready=a.heavyReady;C.request('heavy');C.beforeFrame(m);assert.equal(a.heavyAt,at);assert.equal(a.heavyReady,ready,'no restart during the move or cooldown');
+  console.log('ok heavy attack: wind-up, dash, native press, SMASH damage and knockback');
+}
+// Signature moves by native character id (+4): Marge vacuum, Homer belly bump, Bart slingshot, Lisa sax.
+const sigRun=(id,setup)=>{const m=board();m.ram[0xa44]=id;if(setup)setup(m);C.request('signature');for(let i=0;i<60;i++){C.beforeFrame(m);C.afterFrame(m);m.frame++;}return m;};
+{
+  const b=sigRun(2);assert.equal(b.ram[0xf9b],40-4-4-6,'three slingshot rocks: 4 + 4 + 6');assert.equal(b.arcadeCombat.rocks.length,0);
+  const l=sigRun(3);assert.equal(l.ram[0xf9b],40-3*4-5,'five sax waves stun once each, the last knocks down');
+  const mg=sigRun(0,m=>{m.ram[0xf8d]=60;});const x=(mg.ram[0xf8c]<<8)|mg.ram[0xf8d];
+  assert(x<256+60-30,'the vacuum pulls enemies in ('+(x-256)+' px left)');assert.equal(mg.ram[0xf9b],33,'then blows them away for 7');
+  const h=sigRun(1);assert.equal(h.ram[0xf9b],32,'belly bump hits for 8');
+  const hm=board();hm.ram[0xa44]=1;C.request('signature');C.beforeFrame(hm);hm.cpu.x.w=0x4f80;hm.cpu.u.w=0x4a40;hm.mw(0x4a5b,30);assert.equal(hm.ram[0xa5b],35,'Homer takes half damage while charging');
+  const again=board();C.request('signature');C.beforeFrame(again);const ready=again.arcadeCombat.players[0].sigReady;assert(ready>again.frame+100);
+  again.frame+=60;C.request('signature');C.beforeFrame(again);assert.equal(again.arcadeCombat.players[0].sigReady,ready,'signature recharges');
+  assert.deepEqual(JSON.parse(JSON.stringify(again.arcadeCombat)),again.arcadeCombat,'move state is plain data');
+  console.log('ok signature moves: slingshot rocks, sax waves, vacuum pull + blast, belly bump with half damage, recharge');
+}
+// Roll: holds the roll direction for the native walk, scripted velocity, and a rotating sprite transform mid-roll.
+{
+  const m=board(),a=m.arcadeCombat.players[0];m.inputs.P1=255&~4;C.beforeFrame(m);m.inputs.P1=255&~4;C.request('roll');C.beforeFrame(m);
+  assert.equal(m.inputs.P1,255&~(2|4),'rolls right and into the stage while up is held');assert.equal(a.rollDz,1);
+  m.mw(0x4a4f,0);m.mw(0x4a50,0);assert.equal(((m.ram[0xa4f]<<8)|m.ram[0xa50]),C.ROLL.speed,'native velocity assignment becomes the roll speed');
+  m.frame+=8;const t=C.transformFor(m,0);assert(t&&Math.abs(t.rot)>0.5&&t.ghosts.length===2,'mid-roll the sprite spins with afterimages');
+  m.frame+=C.ROLL.frames;assert.equal(C.transformFor(m,0),null,'and stands back up');
+  console.log('ok roll: direction, depth, native velocity and sprite transform');
+}
+// Compositor: a 10x20 figure in the scratch buffer rotated a quarter turn lands 20x10, on the floor line for a roll.
+{
+  const W=320,view={bmp:new Uint16Array(W*264),pri:new Uint8Array(W*264)},S={bmp:new Uint16Array(W*264),pri:new Uint8Array(W*264),priSnap:new Uint8Array(W*264),pmask:0};
+  for(let y=100;y<120;y++)for(let x=50;x<60;x++){S.pri[y*W+x]=31;S.bmp[y*W+x]=77;}
+  C.composite(view,S,{rot:Math.PI/2,kx:1,ky:1,pivot:'roll',ghosts:[{dx:-8,pen:6}]},4096);
+  let x0=W,x1=0,y0=264,y1=0,n=0,g=0;for(let i=0;i<view.bmp.length;i++){if(view.bmp[i]===77){n++;const x=i%W,y=(i/W)|0;x0=Math.min(x0,x);x1=Math.max(x1,x);y0=Math.min(y0,y);y1=Math.max(y1,y);}if(view.bmp[i]===4102)g++;}
+  assert(x1-x0>=18&&y1-y0<=11,'rotated a quarter turn: '+(x1-x0+1)+'x'+(y1-y0+1));assert(Math.abs(y1-119)<=1,'rests on the original floor line');assert(n>=180&&g>20,'figure plus a checkered afterimage');
+  view.pri.fill(0);view.bmp.fill(0);S.priSnap.fill(31);C.composite(view,S,{rot:0.3,kx:1,ky:1,pivot:'feet',ghosts:[]},4096);assert.equal(view.bmp.filter(v=>v===77).length,0,'objects already in front keep covering the player');
+  for(const [k,gl] of Object.entries(C.ICONS))assert(gl.length===12&&gl.every(r=>r.length===12),'icon '+k+' is 12x12');
+  for(const u of C.UPGRADES)assert(C.ICONS[u.icon],'item '+u.id+' has a picture');
+  console.log('ok sprite compositor rotation, floor line, afterimages, occlusion; item pictures');
+}
+// Moves never start while the game owns the player (0x3f = held by an enemy), and never write velocity directly:
+// a velocity written while held would keep the player sliding, because the game stops assigning velocity then.
+{
+  const m=board(),a=m.arcadeCombat.players[0];m.ram[0xa45]=0x3f;for(const mv of ['heavy','signature','roll']){C.request(mv);C.beforeFrame(m);}
+  assert(a.heavyAt<0&&a.sigAt<0&&a.rollAt<0,'no move starts while held');
+  m.ram[0xa45]=1;m.ram[0xa4f]=0;m.ram[0xa50]=0;C.request('heavy');for(let i=0;i<C.HEAVY.windup+C.HEAVY.dash;i++){C.beforeFrame(m);m.frame++;}
+  assert.equal((m.ram[0xa4f]<<8)|m.ram[0xa50],0,'moves only replace velocities the game assigns itself');
+  console.log('ok moves wait for a free native state and never write velocity directly');
+}
