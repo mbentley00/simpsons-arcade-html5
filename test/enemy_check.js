@@ -8,7 +8,7 @@ vm.runInNewContext(fs.readFileSync(require.resolve('../web/custom/slugger.js'), 
 vm.runInNewContext(fs.readFileSync(require.resolve('../web/custom/moleman.js'), 'utf8'), ctx);
 vm.runInNewContext(fs.readFileSync(require.resolve('../web/custom/comic_book_guy.js'), 'utf8'), ctx);
 // Converted from the SimpsonsSprites sheets by tools/build_sheet_enemies.py
-const SHEET_ENEMIES = { fat_tony: 'Fat Tony', rich_texan: 'Rich Texan', burns: 'Mr. Burns', moe: 'Moe', wiseguy: 'Wiseguy', mob_boss: 'Mob Boss' };
+const SHEET_ENEMIES = { fat_tony: 'Fat Tony', rich_texan: 'Rich Texan', burns: 'Mr. Burns', moe: 'Moe', wiseguy: 'Wiseguy', mob_boss: 'Mob Boss', jasper: 'Jasper' };
 for (const id of Object.keys(SHEET_ENEMIES)) vm.runInNewContext(fs.readFileSync(require.resolve('../web/custom/' + id + '.js'), 'utf8'), ctx);
 // custom palettes are given 16-pen slots from 4096 in sorted asset-id order (enemies.js install)
 const inSlot = (p, id) => { const b = 4096 + Object.keys(ctx.window.SIMPENEMY_ASSETS).sort().indexOf(id) * 16; return p >= b && p < b + 16; };
@@ -53,8 +53,11 @@ assert(v.bmp.filter(p=>inSlot(p,'slugger')).length>20,'Slugger renders as a nati
  assert.equal(mv.bmp.filter(p=>inSlot(p,'duffman')).length,0,'Duffman is gone from that record');}
 for (const [id, name] of Object.entries(SHEET_ENEMIES)) {
   const a = ctx.window.SIMPENEMY_ASSETS[id], px = E.decode(a); assert.equal(a.name, name); assert.equal(a.facing, 'left'); assert.equal(a.palette.length, 32);
-  const size = E.display(a); assert(size.height >= 85 && size.height <= 100, name + ' stands about as tall as a native goon');
-  for (let f = 0; f < 16; f++) { let n = 0; for (let y = 0; y < 96; y++) { assert.equal(px[f*6144+y*64], 0, name+' frame '+f+' left edge'); assert.equal(px[f*6144+y*64+63], 0, name+' frame '+f+' right edge'); for (let x = 0; x < 64; x++) if (px[f*6144+y*64+x]) n++; } assert(n > 500, name + ' frame ' + f + ' must be a full pose (' + n + ')'); }
+  // cells are 64x96 unless the art needs more room (Jasper's overhead whack): check each asset at its own size
+  const W = a.width, H = a.height, N = W * H; assert.equal(a.tilesPerFrame, (W / 16) * (H / 16));
+  let top = H; for (let y = 0; y < H; y++) for (let x = 0; x < W; x++) if (px[y * W + x]) top = Math.min(top, y);
+  const tall = (a.anchor[1] - top) * a.displayScale; assert(tall >= 50 && tall <= 72, name + ' stands about as tall as a native goon (' + tall.toFixed(1) + ' px)');
+  for (let f = 0; f < 16; f++) { let n = 0; for (let y = 0; y < H; y++) { assert.equal(px[f*N+y*W], 0, name+' frame '+f+' left edge'); assert.equal(px[f*N+y*W+W-1], 0, name+' frame '+f+' right edge'); for (let x = 0; x < W; x++) if (px[f*N+y*W+x]) n++; } assert(n > 500, name + ' frame ' + f + ' must be a full pose (' + n + ')'); }
   const mb = new Board(files), mv = new Video(mb); E.install(mb, mv, { 0: rows }, ctx.window.SIMPENEMY_ASSETS); mb.load(b.save());
   const k = Object.keys(mb.stageEnemySkins).find(k => mb.stageEnemySkins[k].id === 'duffman'); mb.stageEnemySkins[k].id = id; mb.runFrames(1); mv.render();
   assert(mv.bmp.filter(p => inSlot(p, id)).length > 300, name + ' renders with his own palette');
